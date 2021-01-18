@@ -4,8 +4,12 @@ import java.awt.geom.AffineTransform;
 import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
 import java.awt.Color;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -41,12 +45,26 @@ public final class Console {
     private static final char C_DARK = '\u2593';
     private static final char C_BLACK = '\u2588';
 
-    private static final String LOG_ID = ">>";
+    //private static final String LOG_ID = ">>";
 
     private static final int PROGRESS_BAR_WIDTH = 10;
     private static final char PROB_START = '[';
     private static final char PROB_END = ']';
     private static final char PROB_ON = '.';
+
+    private static final String RESET = "\u001B[0m";
+    private static final String BLACK = "\u001B[30m";
+    private static final String RED = "\u001B[31m";
+    private static final String GREEN = "\u001B[32m";
+    private static final String YELLOW = "\u001B[33m";
+    private static final String BLUE = "\u001B[34m";
+    private static final String PURPLE = "\u001B[35m";
+    private static final String CYAN = "\u001B[36m";
+    private static final String WHITE = "\u001B[37m";
+
+    public static boolean coloredOutput = true;
+
+    public static final BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
 
 
@@ -211,16 +229,6 @@ public final class Console {
 
 
 
-    public static final void info(final String title, final String content) {
-        info(title, content, System.out);
-    }
-
-    public static final void info(final String title, final String content, final PrintStream out) {
-        out.println(new StringBuilder().append('[').append(title).append("]: ").append(content));
-    }
-
-
-
     public static final void newLine() {
         newLine(1);
     }
@@ -235,27 +243,8 @@ public final class Console {
 
 
 
-    public static final void map(final Object key, final Object value) {
-        internalLog(new String[] { key + ": " + stringFor(value) });
-    }
 
-
-    public static final void log(final Object object, final Object... moreObjects) {
-        final Object[] objects;
-        if(moreObjects == null) objects = new Object[] { object };
-        else {
-            objects = new Object[moreObjects.length + 1];
-            objects[0] = object;
-            System.arraycopy(moreObjects, 0, objects, 1, moreObjects.length);
-        }
-        internalLog(objects);
-    }
-
-    public static final void log() {
-        internalLog(new Object[0]);
-    }
-
-
+    
 
     private static final String stringFor(Object o) {
         if(o == null) return String.valueOf((String)null);
@@ -271,54 +260,12 @@ public final class Console {
         return '[' + Arrays.stream((Object[])o).map(e -> stringFor(e)).collect(Collectors.joining(", ")) + ']';
     }
 
-    private static final String removeBrackets(String arrayString) {
-        if(arrayString.startsWith("[") && arrayString.endsWith("]"))
-            return arrayString.substring(1, arrayString.length() - 1);
-        return arrayString;
-    }
-
-    /**
-     * <b>This method should be called <i>directly</i> and <i>exclusively</i> by all of the internal <i>log</i> methods!</b>
-     * <p>Prints the given objects and a information about the current method into the given print stream.
-     * 
-     * @param out The print stream to write into
-     * @param objects The objects to print
-     */
-    private static final void internalLog(Object[] objects) {
-        if(progressBarActive) {
-            System.out.println();
-            progressBarActive = false;
-        }
-        if(objects == null) objects = new Object[] {null};
-        if(objects.length == 0) {
-            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-            StackTraceElement[] reducedStackTrace = new StackTraceElement[stackTrace.length - 3];
-            System.arraycopy(stackTrace, 3, reducedStackTrace, 0, reducedStackTrace.length);
-            String stackString = Arrays.asList(reducedStackTrace).stream().map(e -> e.toString()).collect(Collectors.joining("\n\t"));
-            System.out.println(LOG_ID + '\t' + stackString); // Stack trace contains line numbers
-        }
-        else {
-            StringBuilder out = new StringBuilder().append(LOG_ID).append(' ');
-            out.append(removeBrackets(stringFor(objects))).append(' ');
-            String classAndLineString = classAndLineString();
-            final int width = TerminalFactory.get().getWidth();
-            int usedWidth = width - ((out.length() + classAndLineString.length()) % width);
-            for(int i=0; i!=usedWidth; i++) out.append(' ');
-            System.out.println(out.append(classAndLineString));
-        }
-    }
-
-    private static final String classAndLineString() {
-        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-        final int index = elements.length > 4 ? 4 : elements.length - 1;
-        return elements[index].getFileName() + ':' + elements[index].getLineNumber();
-    }
 
     /**
      * Clears the console.
      */
     public static final void clear() {
-        System.out.print(String.format("\033[2J"));
+        savelyPrintln(String.format("\033[2J"));
     }
 
 
@@ -327,6 +274,13 @@ public final class Console {
     private static int lastOn = -1;
     private static int lastPercentage = -1;
 
+    /**
+     * Sets the given progress on the console progress bar. If there
+     * is no progress bar yet there will be created one.
+     * 
+     * @param progress The progress to set, a value between {@code 0}
+     *                 and {@code 1}, inslusive
+     */
     public static final void setProgress(double progress) {
         if(progress < 0) progress = 0;
         if(progress > 1) progress = 1;
@@ -339,7 +293,8 @@ public final class Console {
         StringBuilder dif = new StringBuilder();
 
         if(!progressBarActive) {
-            dif.append(LOG_ID).append(' ').append(PROB_START);
+            dif.append('[').append(colored("INFO", Colors.BLUE)).append(']');
+            dif.append(' ').append(PROB_START);
             for(int i=0; i<PROGRESS_BAR_WIDTH; i++) dif.append(i < on ? PROB_ON : ' ');
         }
         else {
@@ -365,5 +320,314 @@ public final class Console {
             progressBarActive = false;
         }
         else progressBarActive = true;
+    }
+
+
+    /**
+     * Prints the current stack trace until this method call into the console.
+     */
+    public static final void printStackTrace() {
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+        StackTraceElement[] reducedStackTrace = new StackTraceElement[stackTrace.length - 3];
+        System.arraycopy(stackTrace, 2, reducedStackTrace, 0, reducedStackTrace.length);
+        String stackString = Arrays.stream(reducedStackTrace).map(e -> e.toString()).collect(Collectors.joining("\n\t"));
+        savelyPrintln(">>>" + '\t' + stackString);
+    }
+
+
+    /**
+     * Prints a splitting line with the given title in the console.
+     * 
+     * @param title The title of the split
+     */
+    public static final void split(String title) {
+        if(title == null) title = "null";
+
+        int width = TerminalFactory.get().getWidth();
+
+        StringBuilder out = new StringBuilder(width);
+
+        int lineLength = width - (title.length() + 4);
+        int firstHalf = width / 2, secondHalf = lineLength - firstHalf;
+
+        for(int i=0; i<firstHalf; i++) out.append('-');
+        out.append("< ").append(title).append(" >");
+        for(int i=0; i<secondHalf; i++) out.append('-');
+
+        savelyPrintln(out);
+    }
+
+    /**
+     * Prints a splitting line in the console;
+     */
+    public static final void split() {
+        int width = TerminalFactory.get().getWidth();
+        StringBuilder line = new StringBuilder(width);
+        for(int i=0; i<width; i++) line.append('-');
+        savelyPrintln(line);
+    }
+
+
+    /**
+     * Prints the given information in the console.
+     * 
+     * @param x The information to print
+     */
+    public static final void info(Object x) {
+        info(new Object[] {x});
+    }
+
+    /**
+     * Prints the given information in the console.
+     * 
+     * @param x An information to print
+     * @param y Another information to print
+     * @param more More information to print
+     */
+    public static final void info(Object x, Object y, Object... more) {
+        info(combine(x, y, more));
+    }
+
+    /**
+     * Prints the given warning in the console.
+     * 
+     * @param x The warning to print
+     */
+    public static final void warn(Object x) {
+        warn(new Object[] {x});
+    }
+
+    /**
+     * Prints the given warnings in the console.
+     * 
+     * @param x A warning to print
+     * @param y Another warning to print
+     * @param more More warnings to print
+     */
+    public static final void warn(Object x, Object y, Object... more) {
+        warn(combine(x, y, more));
+    }
+
+    /**
+     * Prints the given error in the console.
+     * 
+     * @param x The error to print
+     */
+    public static final void error(Object x) {
+        error(new Object[] {x});
+    }
+
+    /**
+     * Prints the given errors in the console.
+     * 
+     * @param x A error to print
+     * @param y Another error to print
+     * @param more More errors to print
+     */
+    public static final void error(Object x, Object y, Object... more) {
+        error(combine(x, y, more));
+    }
+
+    /**
+     * Logs the given information together with the current time
+     * in the console.
+     * 
+     * @param x The information to print
+     */
+    public static final void log(Object x) {
+        log(new Object[] {x});
+    }
+
+    /**
+     * Logs the given information together with the current time
+     * in the console.
+     * 
+     * @param x An information to print
+     * @param y Another information to print
+     * @param more More information to print
+     */
+    public static final void log(Object x, Object y, Object... more) {
+        log(combine(x, y, more));
+    }
+
+    /**
+     * Prints the two objects as key-value pair as information in
+     * the console.
+     * <p>For example,
+     * <pre>{@code map("Hello", "World");}</pre>
+     * will result in the output {@code [INFO] Hello: World}
+     * 
+     * @param key The key to map the value to
+     * @param value The value to map
+     */
+    public static final void map(final Object key, final Object value) {
+        info(new Object[] {key + ": " + value});
+    }
+
+
+    private static final Object[] combine(Object x, Object y, Object[] more) {
+        if(more == null) return new Object[] {x, y, null};
+        else if(more.length == 0) return new Object[] {x, y};
+        final Object[] combined = new Object[more.length + 2];
+        combined[0] = x;
+        combined[1] = y;
+        System.arraycopy(more, 0, combined, 2, more.length);
+        return combined;
+    }
+
+
+    private static final void info(Object[] objects) {
+        internalPrint("INFO", Colors.BLUE, objects);
+    }
+
+    private static final void warn(Object[] objects) {
+        internalPrint("WARN", Colors.YELLOW, objects);
+    }
+
+    private static final void error(Object[] objects) {
+        internalPrint("ERROR", Colors.RED, objects);
+    }
+
+    private static final void log(Object[] objects) {
+        Calendar c = Calendar.getInstance();
+        StringBuilder time = new StringBuilder(8);
+        time.append(String.format("%02d", c.get(Calendar.HOUR_OF_DAY)));
+        time.append(':');
+        time.append(String.format("%02d", c.get(Calendar.MINUTE)));
+        time.append(':');
+        time.append(String.format("%02d", c.get(Calendar.SECOND)));
+        internalPrint(time.toString(), Colors.GREEN, objects);
+    }
+
+    private static final void internalPrint(String title, Colors color, Object[] objects) {
+        if(objects == null)
+            objects = new Object[] {null};
+            // Will print 'null'
+
+        StringBuilder out = new StringBuilder();
+
+        out.append('[').append(colored(title, color)).append(']');
+        out.append(' ');
+        out.append(Arrays.stream(objects).map(o -> stringFor(o)).collect(Collectors.joining(", ")));
+
+        out.append(' ');
+
+        String classAndLineString = classAndLineString(5);
+        final int width = TerminalFactory.get().getWidth();
+        int usedWidth = width - ((out.length() + classAndLineString.length() - (coloredOutput ? getAsciiColor(color).length() + RESET.length() : 0)) % width);
+        for(int i=0; i!=usedWidth; i++) out.append(' ');
+        out.append(classAndLineString);
+
+        savelyPrintln(out);
+    }
+
+
+    private static final void savelyPrintln(Object x) {
+        savelyPrint(x);
+        System.out.println();
+    }
+
+    private static final void savelyPrint(Object x) {
+        if(progressBarActive) {
+            System.out.println();
+            progressBarActive = false;
+        }
+        System.out.print(x);
+    }
+
+
+    public static final String input(String prompt) {
+        if(prompt == null) prompt = "null";
+
+        StringBuilder out = new StringBuilder();
+
+        out.append('[').append(colored("INPUT", Colors.PURPLE)).append(']');
+        out.append(' ').append(prompt).append(" ");
+
+        savelyPrint(out);
+
+        String result;
+        try {
+            result = reader.readLine();
+        } catch(IOException e) {
+            System.out.println();
+            e.printStackTrace();
+            result = null;
+        }
+
+        return result;
+    }
+
+
+
+    /**
+     * Returns the given string colored in the specified color. If {@link coloredOutput}
+     * is {@code false} or the color is {@code null}, the input string will be returned.
+     * Note that the size of the string will increase by {@code 9} if the text actually
+     * gets colored.
+     * 
+     * @param string The string to color
+     * @param color The color to paint the string in
+     * @return The painted string
+     */
+    public static final String colored(String string, Colors color) {
+        if(!coloredOutput || color == null) return string;
+        return new StringBuilder(string.length() + 2).append(getAsciiColor(color)).append(string).append(RESET).toString();
+    }
+
+    private static final String classAndLineString(int off) {
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        final int index = elements.length > off ? off : elements.length - 1;
+        return elements[index].getFileName() + ':' + elements[index].getLineNumber();
+    }
+
+    private static final String getAsciiColor(Colors color) {
+        switch (color) {
+            case WHITE: return WHITE;
+            case YELLOW: return YELLOW;
+            case RED: return RED;
+            case PURPLE: return PURPLE;
+            case BLUE: return BLUE;
+            case CYAN: return CYAN;
+            case GREEN: return GREEN;
+            case BLACK: return BLACK;
+        }
+        throw new RuntimeException("Unexpected color");
+    }
+
+    /**
+     * A set of colors that can be chosen to color text in using {@code colored(String, Colors)}.
+     */
+    public static enum Colors {
+        WHITE,
+        YELLOW,
+        RED,
+        PURPLE,
+        BLUE,
+        CYAN,
+        GREEN,
+        BLACK
+    }
+
+
+    public static void main(String[] args) {
+        //test();
+        map("Result", input("Enter something:"));
+        map("Result", input("Enter something:"));
+    }
+
+
+    static void test() {
+        info("Hello", "World");
+        info((Object)new Object[] {"Hello", "World"});
+        split("Type");
+        info("Hello");
+        warn("Hello");
+        error("Hello");
+        log("Hello");
+        map("Reset size", RESET.length());
+        printStackTrace();
+        setProgress(0.5);
+        setProgress(0.75);
     }
 }
