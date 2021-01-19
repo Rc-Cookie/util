@@ -16,6 +16,8 @@ import java.util.stream.Collectors;
 
 import jline.TerminalFactory;
 
+import com.diogonunes.jcolor.*;
+
 import com.github.rccookie.common.util.Grid.GridElement;
 
 /**
@@ -44,22 +46,10 @@ public final class Console {
     private static final char C_DARK = '\u2593';
     private static final char C_BLACK = '\u2588';
 
-    //private static final String LOG_ID = ">>";
-
     private static final int PROGRESS_BAR_WIDTH = 10;
     private static final char PROB_START = '[';
     private static final char PROB_END = ']';
     private static final char PROB_ON = '.';
-
-    private static final String RESET = "\u001B[0m";
-    private static final String BLACK = "\u001B[30m";
-    private static final String RED = "\u001B[31m";
-    private static final String GREEN = "\u001B[32m";
-    private static final String YELLOW = "\u001B[33m";
-    private static final String BLUE = "\u001B[34m";
-    private static final String PURPLE = "\u001B[35m";
-    private static final String CYAN = "\u001B[36m";
-    private static final String WHITE = "\u001B[37m";
 
     /**
      * Configuration for the console output.
@@ -94,7 +84,7 @@ public final class Console {
      */
     public static final BufferedReader READER = new BufferedReader(new InputStreamReader(System.in));
 
-    private static final String ERROR_BLOCK = new StringBuilder("[").append(colored("ERROR", Colors.RED)).append("] ").toString();
+    private static final String ERROR_BLOCK = new StringBuilder("[").append(colored("ERROR", Attribute.RED_TEXT())).append("] ").toString();
 
     /**
      * This print stream prints all information info the normal System.out
@@ -388,7 +378,7 @@ public final class Console {
         StringBuilder dif = new StringBuilder();
 
         if(!progressBarActive) {
-            dif.append('[').append(colored("INFO", Colors.BLUE)).append(']');
+            dif.append('[').append(colored("INFO", Attribute.BLUE_TEXT())).append(']');
             dif.append(' ').append(PROB_START);
             for(int i=0; i<PROGRESS_BAR_WIDTH; i++) dif.append(i < on ? PROB_ON : ' ');
         }
@@ -441,7 +431,7 @@ public final class Console {
         int width = getConsoleWidth();
 
         StringBuilder out = new StringBuilder(width);
-        out.append('[').append(colored("INFO", Colors.BLUE)).append("] ");
+        out.append('[').append(colored("INFO", Attribute.BLUE_TEXT())).append("] ");
 
         int lineLength = width - (title.length() + 4);
         int firstHalf = lineLength / 2, secondHalf = lineLength - firstHalf;
@@ -460,7 +450,7 @@ public final class Console {
     public static final void split() {
         int width = getConsoleWidth();
         StringBuilder line = new StringBuilder(width);
-        line.append('[').append(colored("INFO", Colors.BLUE)).append("] ");
+        line.append('[').append(colored("INFO", Attribute.BLUE_TEXT())).append("] ");
         for(int i=0; i<width-7; i++) line.append('-'); // 7 = length of "[INFO] "
         savelyPrintln(line);
     }
@@ -593,7 +583,7 @@ public final class Console {
 
         StringBuilder out = new StringBuilder();
 
-        out.append('[').append(colored("INPUT", Colors.PURPLE)).append(']');
+        out.append('[').append(colored("INPUT", Attribute.MAGENTA_TEXT())).append(']');
         out.append(' ').append(prompt).append(" ");
 
         savelyPrint(out);
@@ -621,15 +611,15 @@ public final class Console {
 
 
     private static final void info(Object[] objects) {
-        internalPrint("INFO", Colors.BLUE, objects);
+        internalPrint("INFO", objects, Attribute.BLUE_TEXT());
     }
 
     private static final void warn(Object[] objects) {
-        internalPrint("WARN", Colors.YELLOW, objects);
+        internalPrint("WARN", objects, Attribute.YELLOW_TEXT());
     }
 
     private static final void error(Object[] objects) {
-        internalPrint("ERROR", Colors.RED, objects);
+        internalPrint("ERROR", objects, Attribute.RED_TEXT());
     }
 
     private static final void log(Object[] objects) {
@@ -640,17 +630,17 @@ public final class Console {
         time.append(String.format("%02d", c.get(Calendar.MINUTE)));
         time.append(':');
         time.append(String.format("%02d", c.get(Calendar.SECOND)));
-        internalPrint(time.toString(), Colors.GREEN, objects);
+        internalPrint(time.toString(), objects, Attribute.GREEN_TEXT());
     }
 
-    private static final void internalPrint(String title, Colors color, Object[] objects) {
+    private static final void internalPrint(String title, Object[] objects, Attribute... colors) {
         if(objects == null)
             objects = new Object[] {null};
             // Will print 'null'
 
         StringBuilder out = new StringBuilder();
 
-        out.append('[').append(colored(title, color)).append(']');
+        out.append('[').append(colored(title, colors)).append(']');
         out.append(' ');
         out.append(Arrays.stream(objects).map(o -> stringFor(o)).collect(Collectors.joining(", ")));
 
@@ -659,7 +649,7 @@ public final class Console {
         if(Config.includeLineNumber) {
             String classAndLineString = classAndLineString(5);
             final int width = getConsoleWidth();
-            int usedWidth = width - ((out.length() + classAndLineString.length() - (Config.coloredOutput ? getAsciiColor(color).length() + RESET.length() : 0)) % width);
+            int usedWidth = width - ((out.length() + classAndLineString.length() - (Config.coloredOutput ? colored("", colors).length() : 0)) % width);
             for(int i=0; i!=usedWidth; i++) out.append(' ');
             out.append(classAndLineString);
         }
@@ -694,9 +684,9 @@ public final class Console {
      * @param color The color to paint the string in
      * @return The painted string
      */
-    public static final String colored(String string, Colors color) {
-        if(!Config.coloredOutput || color == null) return string;
-        return new StringBuilder(string.length() + 2).append(getAsciiColor(color)).append(string).append(RESET).toString();
+    public static final String colored(String string, Attribute...attributes) {
+        if(!Config.coloredOutput || attributes == null) return string;
+        return Ansi.colorize(string, attributes);
     }
 
     private static final String classAndLineString(int off) {
@@ -712,20 +702,6 @@ public final class Console {
         } catch(Exception e) {
             return 100;
         }
-    }
-
-    private static final String getAsciiColor(Colors color) {
-        switch (color) {
-            case WHITE: return WHITE;
-            case YELLOW: return YELLOW;
-            case RED: return RED;
-            case PURPLE: return PURPLE;
-            case BLUE: return BLUE;
-            case CYAN: return CYAN;
-            case GREEN: return GREEN;
-            case BLACK: return BLACK;
-        }
-        throw new RuntimeException("Unexpected color");
     }
 
     /**
@@ -744,9 +720,10 @@ public final class Console {
 
 
     public static void main(String[] args) {
-        Config.includeLineNumber = false;
         System.setErr(CONSOLE_ERROR_STREAM);
         test();
+        System.out.println(Ansi.colorize("Some text", Attribute.RED_TEXT()));
+        System.out.println("Some more text");
     }
 
 
@@ -759,9 +736,10 @@ public final class Console {
         error("Hello");
         log("Hello");
         split();
-        map("Entered", input("Enter something:"));
+        //map("Entered", input("Enter something:"));
         printStackTrace();
         setProgress(0.5);
         setProgress(0.75);
+        log();
     }
 }

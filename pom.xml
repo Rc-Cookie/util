@@ -5,7 +5,7 @@
 
   <groupId>com.github.rccookie</groupId>
   <artifactId>util</artifactId>
-  <version>1.1.1</version>
+  <version>1.2</version>
 
   <name>util</name>
   <!-- FIXME change it to the project's website -->
@@ -32,6 +32,11 @@
       <groupId>com.github.rccookie</groupId>
       <artifactId>geometry</artifactId>
       <version>1.0.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.diogonunes</groupId>
+      <artifactId>JColor</artifactId>
+      <version>5.0.1</version>
     </dependency>
   </dependencies>
 
