@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
-import org.jline.terminal.TerminalBuilder;
+import jline.TerminalFactory;
 
 import com.github.rccookie.common.util.Grid.GridElement;
 
@@ -441,9 +441,11 @@ public final class Console {
         int width = getConsoleWidth();
 
         StringBuilder out = new StringBuilder(width);
+        out.append('[').append(colored("INFO", Colors.BLUE)).append("] ");
 
         int lineLength = width - (title.length() + 4);
-        int firstHalf = width / 2, secondHalf = lineLength - firstHalf;
+        int firstHalf = lineLength / 2, secondHalf = lineLength - firstHalf;
+        firstHalf -= 7; // 7 = legnth of "[INFO] "
 
         for(int i=0; i<firstHalf; i++) out.append('-');
         out.append("< ").append(title).append(" >");
@@ -458,7 +460,8 @@ public final class Console {
     public static final void split() {
         int width = getConsoleWidth();
         StringBuilder line = new StringBuilder(width);
-        for(int i=0; i<width; i++) line.append('-');
+        line.append('[').append(colored("INFO", Colors.BLUE)).append("] ");
+        for(int i=0; i<width-7; i++) line.append('-'); // 7 = length of "[INFO] "
         savelyPrintln(line);
     }
 
@@ -539,6 +542,14 @@ public final class Console {
      */
     public static final void error(Error error) {
         error.printStackTrace(CONSOLE_ERROR_STREAM);
+    }
+
+    /**
+     * Logs the current time in the console.
+     * <p>This has the same effect as logging {@code ""}.
+     */
+    public static final void log() {
+        log(new Object[] {""});
     }
 
     /**
@@ -697,7 +708,7 @@ public final class Console {
     private static final int getConsoleWidth() {
         if(Config.manualConsoleWidth != null) return Config.manualConsoleWidth;
         try {
-            return Math.max(TerminalBuilder.terminal().getWidth(), 100);
+            return Math.max(TerminalFactory.get().getWidth(), 100);
         } catch(Exception e) {
             return 100;
         }
@@ -747,6 +758,7 @@ public final class Console {
         warn("Hello");
         error("Hello");
         log("Hello");
+        split();
         map("Entered", input("Enter something:"));
         printStackTrace();
         setProgress(0.5);
