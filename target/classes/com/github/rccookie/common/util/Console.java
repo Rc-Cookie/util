@@ -5,7 +5,6 @@ import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
 import java.awt.Color;
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.util.Arrays;
@@ -15,9 +14,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
-import com.github.rccookie.common.util.Grid.GridElement;
+import org.jline.terminal.TerminalBuilder;
 
-import jline.TerminalFactory;
+import com.github.rccookie.common.util.Grid.GridElement;
 
 /**
  * Description: A console utility class.
@@ -62,9 +61,105 @@ public final class Console {
     private static final String CYAN = "\u001B[36m";
     private static final String WHITE = "\u001B[37m";
 
-    public static boolean coloredOutput = true;
+    /**
+     * Configuration for the console output.
+     */
+    public static final class Config {
+        private Config() { }
 
-    public static final BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        /**
+         * Weather the output should be colored. Should be disabled
+         * if the console does not support coloring.
+         */
+        public static boolean coloredOutput = true;
+
+        /**
+         * Weather a print intp the console should include the line
+         * number and class name that calls it.
+         */
+        public static boolean includeLineNumber = true;
+
+        /**
+         * If {@code != null} this will be used instead of the
+         * measured width of the console. Note that the width is
+         * used for the line number and the first measurement will
+         * (currently) break the console input.
+         */
+        public static Integer manualConsoleWidth = null;
+    }
+
+
+    /**
+     * A BufferedReader for the System.in input stream. Should not be closed.
+     */
+    public static final BufferedReader READER = new BufferedReader(new InputStreamReader(System.in));
+
+    private static final String ERROR_BLOCK = new StringBuilder("[").append(colored("ERROR", Colors.RED)).append("] ").toString();
+
+    /**
+     * This print stream prints all information info the normal System.out
+     * output stream marked with {@code [ERROR]}.
+     */
+    public static final PrintStream CONSOLE_ERROR_STREAM = new PrintStream(System.out) {
+        private boolean isLineStart = true;
+        public void print(String s) {
+            if(isLineStart) {
+                super.print(ERROR_BLOCK + s);
+                isLineStart = false;
+            }
+            else super.print(s);
+        };
+        @Override
+        public void println() {
+            super.println();
+            isLineStart = true;
+        };
+        @Override
+        public void println(Object x) {
+            super.println(x);
+            isLineStart = true;
+        };
+        @Override
+        public void println(String x) {
+            super.println();
+            isLineStart = true;
+        };
+        @Override
+        public void println(boolean x) {
+            super.println();
+            isLineStart = true;
+        };
+        @Override
+        public void println(char x) {
+            super.println();
+            isLineStart = true;
+        };
+        @Override
+        public void println(char[] x) {
+            super.println();
+            isLineStart = true;
+        };
+        @Override
+        public void println(double x) {
+            super.println();
+            isLineStart = true;
+        };
+        @Override
+        public void println(float x) {
+            super.println();
+            isLineStart = true;
+        };
+        @Override
+        public void println(int x) {
+            super.println();
+            isLineStart = true;
+        };
+        @Override
+        public void println(long x) {
+            super.println();
+            isLineStart = true;
+        };
+    };
 
 
 
@@ -343,7 +438,7 @@ public final class Console {
     public static final void split(String title) {
         if(title == null) title = "null";
 
-        int width = TerminalFactory.get().getWidth();
+        int width = getConsoleWidth();
 
         StringBuilder out = new StringBuilder(width);
 
@@ -361,7 +456,7 @@ public final class Console {
      * Prints a splitting line in the console;
      */
     public static final void split() {
-        int width = TerminalFactory.get().getWidth();
+        int width = getConsoleWidth();
         StringBuilder line = new StringBuilder(width);
         for(int i=0; i<width; i++) line.append('-');
         savelyPrintln(line);
@@ -429,6 +524,24 @@ public final class Console {
     }
 
     /**
+     * Prints the given exception as an error message into the console
+     * 
+     * @param exception The exception to print
+     */
+    public static final void error(Exception exception) {
+        exception.printStackTrace(CONSOLE_ERROR_STREAM);
+    }
+
+    /**
+     * Prints the given error as an error message into the console
+     * 
+     * @param error The error to print
+     */
+    public static final void error(Error error) {
+        error.printStackTrace(CONSOLE_ERROR_STREAM);
+    }
+
+    /**
      * Logs the given information together with the current time
      * in the console.
      * 
@@ -461,7 +574,27 @@ public final class Console {
      * @param value The value to map
      */
     public static final void map(final Object key, final Object value) {
-        info(new Object[] {key + ": " + value});
+        info(new Object[] {stringFor(key) + ": " + stringFor(value)});
+    }
+
+    public static final String input(String prompt) {
+        if(prompt == null) prompt = "null";
+
+        StringBuilder out = new StringBuilder();
+
+        out.append('[').append(colored("INPUT", Colors.PURPLE)).append(']');
+        out.append(' ').append(prompt).append(" ");
+
+        savelyPrint(out);
+
+        String result;
+        try {
+            result = READER.readLine();
+        } catch(Exception e) {
+            error(e);
+            result = null;
+        }
+        return result;
     }
 
 
@@ -512,11 +645,13 @@ public final class Console {
 
         out.append(' ');
 
-        String classAndLineString = classAndLineString(5);
-        final int width = TerminalFactory.get().getWidth();
-        int usedWidth = width - ((out.length() + classAndLineString.length() - (coloredOutput ? getAsciiColor(color).length() + RESET.length() : 0)) % width);
-        for(int i=0; i!=usedWidth; i++) out.append(' ');
-        out.append(classAndLineString);
+        if(Config.includeLineNumber) {
+            String classAndLineString = classAndLineString(5);
+            final int width = getConsoleWidth();
+            int usedWidth = width - ((out.length() + classAndLineString.length() - (Config.coloredOutput ? getAsciiColor(color).length() + RESET.length() : 0)) % width);
+            for(int i=0; i!=usedWidth; i++) out.append(' ');
+            out.append(classAndLineString);
+        }
 
         savelyPrintln(out);
     }
@@ -536,28 +671,6 @@ public final class Console {
     }
 
 
-    public static final String input(String prompt) {
-        if(prompt == null) prompt = "null";
-
-        StringBuilder out = new StringBuilder();
-
-        out.append('[').append(colored("INPUT", Colors.PURPLE)).append(']');
-        out.append(' ').append(prompt).append(" ");
-
-        savelyPrint(out);
-
-        String result;
-        try {
-            result = reader.readLine();
-        } catch(IOException e) {
-            System.out.println();
-            e.printStackTrace();
-            result = null;
-        }
-
-        return result;
-    }
-
 
 
     /**
@@ -571,7 +684,7 @@ public final class Console {
      * @return The painted string
      */
     public static final String colored(String string, Colors color) {
-        if(!coloredOutput || color == null) return string;
+        if(!Config.coloredOutput || color == null) return string;
         return new StringBuilder(string.length() + 2).append(getAsciiColor(color)).append(string).append(RESET).toString();
     }
 
@@ -579,6 +692,15 @@ public final class Console {
         final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
         final int index = elements.length > off ? off : elements.length - 1;
         return elements[index].getFileName() + ':' + elements[index].getLineNumber();
+    }
+
+    private static final int getConsoleWidth() {
+        if(Config.manualConsoleWidth != null) return Config.manualConsoleWidth;
+        try {
+            return Math.max(TerminalBuilder.terminal().getWidth(), 100);
+        } catch(Exception e) {
+            return 100;
+        }
     }
 
     private static final String getAsciiColor(Colors color) {
@@ -611,9 +733,9 @@ public final class Console {
 
 
     public static void main(String[] args) {
-        //test();
-        map("Result", input("Enter something:"));
-        map("Result", input("Enter something:"));
+        Config.includeLineNumber = false;
+        System.setErr(CONSOLE_ERROR_STREAM);
+        test();
     }
 
 
@@ -625,7 +747,7 @@ public final class Console {
         warn("Hello");
         error("Hello");
         log("Hello");
-        map("Reset size", RESET.length());
+        map("Entered", input("Enter something:"));
         printStackTrace();
         setProgress(0.5);
         setProgress(0.75);
