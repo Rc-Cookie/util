@@ -85,20 +85,52 @@ public final class Console {
     public static final BufferedReader READER = new BufferedReader(new InputStreamReader(System.in));
 
     private static final String ERROR_BLOCK = new StringBuilder("[").append(colored("ERROR", Attribute.RED_TEXT())).append("] ").toString();
+    private static final String ERROR_BLOCK_PLAIN = "[ERROR] ";
+    private static final String WARN_BLOCK = new StringBuilder("[").append(colored("WARN", Attribute.YELLOW_TEXT())).append("] ").toString();
+    private static final String WARN_BLOCK_PLAIN = "[WARN] ";
+    private static final String INFO_BLOCK = new StringBuilder("[").append(colored("INFO", Attribute.BLUE_TEXT())).append("] ").toString();
+    private static final String INFO_BLOCK_PLAIN = "[INFO] ";
+    private static final String INPUT_BLOCK = new StringBuilder("[").append(colored("INPUT", Attribute.MAGENTA_TEXT())).append("] ").toString();
+    private static final String INPUT_BLOCK_PLAIN = "[INPUT] ";
 
     /**
      * This print stream prints all information info the normal System.out
      * output stream marked with {@code [ERROR]}.
      */
-    public static final PrintStream CONSOLE_ERROR_STREAM = new PrintStream(System.out) {
+    public static final PrintStream CONSOLE_ERROR_STREAM = new NamedStream() {
+        @Override
+        String getLineStart() {
+            return getErrorBlock();
+        };
+    };
+
+    /**
+     * This print stream prints all information info the normal System.out
+     * output stream marked with {@code [WARN]}.
+     */
+    public static final PrintStream CONSOLE_WARN_STREAM = new NamedStream() {
+        @Override
+        String getLineStart() {
+            return getWarnBlock();
+        };
+    };
+
+    private static abstract class NamedStream extends PrintStream {
+
+        public NamedStream() {
+            super(System.out);
+        }
+
         private boolean isLineStart = true;
+        @Override
         public void print(String s) {
             if(isLineStart) {
-                super.print(ERROR_BLOCK + s);
+                super.print(getLineStart() + s);
                 isLineStart = false;
             }
             else super.print(s);
         };
+        abstract String getLineStart();
         @Override
         public void println() {
             super.println();
@@ -150,6 +182,22 @@ public final class Console {
             isLineStart = true;
         };
     };
+
+    private static final String getErrorBlock() {
+        return Config.coloredOutput ? ERROR_BLOCK : ERROR_BLOCK_PLAIN;
+    }
+
+    private static final String getWarnBlock() {
+        return Config.coloredOutput ? WARN_BLOCK : WARN_BLOCK_PLAIN;
+    }
+
+    private static final String getInfoBlock() {
+        return Config.coloredOutput ? INFO_BLOCK : INFO_BLOCK_PLAIN;
+    }
+
+    private static final String getInputBlock() {
+        return Config.coloredOutput ? INPUT_BLOCK : INPUT_BLOCK_PLAIN;
+    }
 
 
 
@@ -431,7 +479,7 @@ public final class Console {
         int width = getConsoleWidth();
 
         StringBuilder out = new StringBuilder(width);
-        out.append('[').append(colored("INFO", Attribute.BLUE_TEXT())).append("] ");
+        out.append(getInfoBlock());
 
         int lineLength = width - (title.length() + 4);
         int firstHalf = lineLength / 2, secondHalf = lineLength - firstHalf;
@@ -450,7 +498,7 @@ public final class Console {
     public static final void split() {
         int width = getConsoleWidth();
         StringBuilder line = new StringBuilder(width);
-        line.append('[').append(colored("INFO", Attribute.BLUE_TEXT())).append("] ");
+        line.append(getInfoBlock());
         for(int i=0; i<width-7; i++) line.append('-'); // 7 = length of "[INFO] "
         savelyPrintln(line);
     }
@@ -494,6 +542,24 @@ public final class Console {
      */
     public static final void warn(Object x, Object y, Object... more) {
         warn(combine(x, y, more));
+    }
+
+    /**
+     * Prints the given exception as a warning message into the console
+     * 
+     * @param exception The exception to print
+     */
+    public static final void warn(Exception exception) {
+        exception.printStackTrace(CONSOLE_WARN_STREAM);
+    }
+
+    /**
+     * Prints the given error as a warning message into the console
+     * 
+     * @param error The error to print
+     */
+    public static final void warn(Error error) {
+        error.printStackTrace(CONSOLE_WARN_STREAM);
     }
 
     /**
@@ -583,8 +649,8 @@ public final class Console {
 
         StringBuilder out = new StringBuilder();
 
-        out.append('[').append(colored("INPUT", Attribute.MAGENTA_TEXT())).append(']');
-        out.append(' ').append(prompt).append(" ");
+        out.append(getInputBlock());
+        out.append(prompt).append(" ");
 
         savelyPrint(out);
 
@@ -720,10 +786,8 @@ public final class Console {
 
 
     public static void main(String[] args) {
-        System.setErr(CONSOLE_ERROR_STREAM);
+        System.setErr(CONSOLE_WARN_STREAM);
         test();
-        System.out.println(Ansi.colorize("Some text", Attribute.RED_TEXT()));
-        System.out.println("Some more text");
     }
 
 
@@ -741,5 +805,6 @@ public final class Console {
         setProgress(0.5);
         setProgress(0.75);
         log();
+        throw new RuntimeException("Some exception");
     }
 }
