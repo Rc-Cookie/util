@@ -31,7 +31,9 @@ public interface Stream<T> extends Iterable<T>, Iterator<T> {
 
     /**
      * Returns the element at the given index of the stream
-     * without removing it.
+     * without removing it. You can use {@link #peek()} to peek
+     * the first element which will therefore be returned by 
+     * {@link #next()}.
      * 
      * @param index The index to peek
      * @return The element currently at that index
@@ -57,7 +59,8 @@ public interface Stream<T> extends Iterable<T>, Iterator<T> {
     }
 
     /**
-     * Returns itself.
+     * Returns itself. Iterating through a stream will therefore cause
+     * it to be empty afterwards.
      * 
      * @return Itself
      */
