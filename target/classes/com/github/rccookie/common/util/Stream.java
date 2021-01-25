@@ -6,7 +6,7 @@ import java.util.NoSuchElementException;
 /**
  * A stream is a type of data structure that contains
  * a number of ordered elements that are constantly added
- * at the end and removed at the fromt. The next element can be
+ * at the end and removed at the front. The next element can be
  * accessed using {@link #next()}. Once it has been
  * requested it will be irreversible removed from the stream.
  * Elements are appended using {@link #add(Object)}.
