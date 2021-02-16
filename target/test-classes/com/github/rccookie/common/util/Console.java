@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
-import jline.TerminalFactory;
+//import jline.TerminalFactory;
 
 import com.diogonunes.jcolor.*;
 
@@ -764,10 +764,9 @@ public final class Console {
     private static final int getConsoleWidth() {
         if(Config.manualConsoleWidth != null) return Config.manualConsoleWidth;
         try {
-            return Math.max(TerminalFactory.get().getWidth(), 100);
-        } catch(Exception e) {
-            return 100;
-        }
+            //return Math.max(TerminalFactory.get().getWidth(), 100);
+        } catch(Exception e) { }
+        return 100;
     }
 
     /**

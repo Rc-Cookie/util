@@ -17,20 +17,15 @@
   </properties>
 
   <dependencies>
-    <dependency>
+    <!--dependency>
       <groupId>jline</groupId>
       <artifactId>jline</artifactId>
       <version>2.14.6</version>
-    </dependency>
+    </dependency-->
     <dependency>
       <groupId>com.github.rccookie</groupId>
       <artifactId>geometry</artifactId>
       <version>1.0.1</version>
-    </dependency>
-    <dependency>
-      <groupId>com.diogonunes</groupId>
-      <artifactId>JColor</artifactId>
-      <version>5.0.1</version>
     </dependency>
   </dependencies>
 
