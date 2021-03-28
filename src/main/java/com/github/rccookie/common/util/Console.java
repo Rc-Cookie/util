@@ -756,9 +756,12 @@ public final class Console {
     }
 
     private static final String classAndLineString(int off) {
-        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-        final int index = elements.length > off ? off : elements.length - 1;
-        return elements[index].getFileName() + ':' + elements[index].getLineNumber();
+        try {
+            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+            final int index = elements.length > off ? off : elements.length - 1;
+            return elements[index].getFileName() + ':' + elements[index].getLineNumber();
+        } catch(Exception e) { }
+        return "";
     }
 
     private static final int getConsoleWidth() {
@@ -791,19 +794,6 @@ public final class Console {
 
 
     static void test() {
-        info("Hello", "World");
-        info((Object)new Object[] {"Hello", "World"});
-        split("Type");
-        info("Hello");
-        warn("Hello");
-        error("Hello");
-        log("Hello");
-        split();
-        //map("Entered", input("Enter something:"));
-        printStackTrace();
-        setProgress(0.5);
-        setProgress(0.75);
-        log();
-        throw new RuntimeException("Some exception");
+        
     }
 }

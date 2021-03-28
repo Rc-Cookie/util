@@ -9,7 +9,7 @@ package com.github.rccookie.common.util;
  * @version 1.0
  */
 @FunctionalInterface
-public interface Updatable {
+public interface Updateable {
 
     /**
      * Runs an update for this updatable.

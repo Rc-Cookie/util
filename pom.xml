@@ -5,11 +5,9 @@
 
   <groupId>com.github.rccookie</groupId>
   <artifactId>util</artifactId>
-  <version>1.2.4.0</version>
+  <version>current</version>
 
   <name>util</name>
-  <!-- FIXME change it to the project's website -->
-  <url>http://www.example.com</url>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
