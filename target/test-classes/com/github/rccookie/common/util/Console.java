@@ -1,32 +1,41 @@
 package com.github.rccookie.common.util;
 
+import java.awt.Color;
 import java.awt.geom.AffineTransform;
 import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
-import java.awt.Color;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
 //import jline.TerminalFactory;
-
-import com.diogonunes.jcolor.*;
-
+import com.diogonunes.jcolor.Ansi;
+import com.diogonunes.jcolor.Attribute;
 import com.github.rccookie.common.util.Grid.GridElement;
 
 /**
- * Description: A console utility class.
+ * A console utility class.
  */
 public final class Console {
     private Console() { }
 
-    private static final char T_H = '-';//'\u2500'; // For Greenfoot console
+
+
+    private static final HashMap<String, OutputFilter> FILTERS = new HashMap<>();
+    static {
+        new OutputFilter("");
+    }
+
+
+
+    private static final char T_H = '\u2500';
     private static final char T_V = '\u2502';
     private static final char T_C = '\u253C';
     private static final char T_TL = '\u250C';
@@ -377,7 +386,7 @@ public final class Console {
 
 
 
-    
+
 
     private static final String stringFor(Object o) {
         if(o == null) return String.valueOf((String)null);
@@ -390,7 +399,7 @@ public final class Console {
         if(o instanceof short[]) return Arrays.toString((short[])o);
         if(o instanceof char[]) return Arrays.toString((char[])o);
         if(o instanceof byte[]) return Arrays.toString((byte[])o);
-        return '[' + Arrays.stream((Object[])o).map(e -> stringFor(e)).collect(Collectors.joining(", ")) + ']';
+        return Arrays.deepToString((Object[])o);
     }
 
 
@@ -504,24 +513,88 @@ public final class Console {
     }
 
 
+
+
     /**
      * Prints the given information in the console.
      * 
      * @param x The information to print
      */
     public static final void info(Object x) {
-        info(new Object[] {x});
+        internalInfo(x);
     }
 
     /**
      * Prints the given information in the console.
      * 
-     * @param x An information to print
-     * @param y Another information to print
-     * @param more More information to print
+     * @param main The information to print
+     * @param arguments Additional information to print. If {@code main} is a
+     *                  {@code String} and not {@code null} each "{}" will be
+     *                  replaced with the corresponding argument. Additional
+     *                  arguments will be comma-seperated appended.
      */
-    public static final void info(Object x, Object y, Object... more) {
-        info(combine(x, y, more));
+    public static final void info(Object main, Object... arguments) {
+        internalInfo(main, arguments);
+    }
+
+
+
+    /**
+     * Prints the given information in the console.
+     * 
+     * @param x The information to print
+     */
+    public static final void debug(Object x) {
+        internalDebug(x, new Object[0]);
+    }
+
+    /**
+     * Prints the given information in the console.
+     * 
+     * @param main The information to print
+     * @param arguments Additional information to print. If {@code main} is a
+     *                  {@code String} and not {@code null} each "{}" will be
+     *                  replaced with the corresponding argument. Additional
+     *                  arguments will be comma-seperated appended.
+     */
+    public static final void debug(Object main, Object... arguments) {
+        internalDebug(main, arguments);
+    }
+
+
+
+    /**
+     * Prints the given object as a message of the given type (which will be
+     * both title and filter type) into the console. If the type is one of the
+     * default types it will also be threated as such.
+     * 
+     * @param type The title and filter type of this message
+     * @param x The object to print
+     */
+    public static final void custom(String type, Object x) {
+        if(type.toLowerCase().equals("info")) internalInfo(x);
+        else if(type.toLowerCase().equals("debug")) internalDebug(x);
+        else if(type.toLowerCase().equals("warn")) internalWarn(x);
+        else if(type.toLowerCase().equals("error")) internalError(x);
+        else if(type.toLowerCase().equals("log")) internalLog(x);
+        else internalCustom(type, x);
+    }
+
+    /**
+     * Prints the given object as a message of the given type (which will be
+     * both title and filter type) into the console. If the type is one of the
+     * default types it will also be threated as such.
+     * 
+     * @param type The title and filter type of this message
+     * @param x The object to print
+     */
+    public static final void custom(String type, Object main, Object... arguments) {
+        if(type.toLowerCase().equals("info")) internalInfo(main, arguments);
+        else if(type.toLowerCase().equals("debug")) internalDebug(main, arguments);
+        else if(type.toLowerCase().equals("warn")) internalWarn(main, arguments);
+        else if(type.toLowerCase().equals("error")) internalError(main, arguments);
+        else if(type.toLowerCase().equals("log")) internalLog(main, arguments);
+        else internalCustom(type, main, arguments);
     }
 
     /**
@@ -530,7 +603,7 @@ public final class Console {
      * @param x The warning to print
      */
     public static final void warn(Object x) {
-        warn(new Object[] {x});
+        internalWarn(x);
     }
 
     /**
@@ -540,8 +613,8 @@ public final class Console {
      * @param y Another warning to print
      * @param more More warnings to print
      */
-    public static final void warn(Object x, Object y, Object... more) {
-        warn(combine(x, y, more));
+    public static final void warn(Object main, Object... arguments) {
+        internalWarn(main, arguments);
     }
 
     /**
@@ -568,7 +641,7 @@ public final class Console {
      * @param x The error to print
      */
     public static final void error(Object x) {
-        error(new Object[] {x});
+        internalError(x);
     }
 
     /**
@@ -578,8 +651,8 @@ public final class Console {
      * @param y Another error to print
      * @param more More errors to print
      */
-    public static final void error(Object x, Object y, Object... more) {
-        error(combine(x, y, more));
+    public static final void error(Object main, Object... arguments) {
+        internalError(main, arguments);
     }
 
     /**
@@ -605,7 +678,7 @@ public final class Console {
      * <p>This has the same effect as logging {@code ""}.
      */
     public static final void log() {
-        log(new Object[] {""});
+        internalLog("");
     }
 
     /**
@@ -615,7 +688,7 @@ public final class Console {
      * @param x The information to print
      */
     public static final void log(Object x) {
-        log(new Object[] {x});
+        internalLog(x);
     }
 
     /**
@@ -626,8 +699,8 @@ public final class Console {
      * @param y Another information to print
      * @param more More information to print
      */
-    public static final void log(Object x, Object y, Object... more) {
-        log(combine(x, y, more));
+    public static final void log(Object main, Object... arguments) {
+        internalLog(main, arguments);
     }
 
     /**
@@ -641,7 +714,7 @@ public final class Console {
      * @param value The value to map
      */
     public static final void map(final Object key, final Object value) {
-        info(new Object[] {stringFor(key) + ": " + stringFor(value)});
+        internalInfo("{}: {}", new Object[] {key, value});
     }
 
     public static final String input(String prompt) {
@@ -665,30 +738,24 @@ public final class Console {
     }
 
 
-    private static final Object[] combine(Object x, Object y, Object[] more) {
-        if(more == null) return new Object[] {x, y, null};
-        else if(more.length == 0) return new Object[] {x, y};
-        final Object[] combined = new Object[more.length + 2];
-        combined[0] = x;
-        combined[1] = y;
-        System.arraycopy(more, 0, combined, 2, more.length);
-        return combined;
+
+    private static final void internalInfo(Object format, Object... arguments) {
+        internalPrint("INFO", "info", format, arguments, Attribute.BLUE_TEXT());
     }
 
-
-    private static final void info(Object[] objects) {
-        internalPrint("INFO", objects, Attribute.BLUE_TEXT());
+    private static final void internalDebug(Object format, Object... arguments) {
+        internalPrint("DEBUG", "debug", format, arguments, Attribute.CYAN_TEXT());
     }
 
-    private static final void warn(Object[] objects) {
-        internalPrint("WARN", objects, Attribute.YELLOW_TEXT());
+    private static final void internalWarn(Object format, Object... arguments) {
+        internalPrint("WARN", "warn", format, arguments, Attribute.YELLOW_TEXT());
     }
 
-    private static final void error(Object[] objects) {
-        internalPrint("ERROR", objects, Attribute.RED_TEXT());
+    private static final void internalError(Object format, Object... arguments) {
+        internalPrint("ERROR", "error", format, arguments, Attribute.RED_TEXT());
     }
 
-    private static final void log(Object[] objects) {
+    private static final void internalLog(Object format, Object... arguments) {
         Calendar c = Calendar.getInstance();
         StringBuilder time = new StringBuilder(8);
         time.append(String.format("%02d", c.get(Calendar.HOUR_OF_DAY)));
@@ -696,32 +763,76 @@ public final class Console {
         time.append(String.format("%02d", c.get(Calendar.MINUTE)));
         time.append(':');
         time.append(String.format("%02d", c.get(Calendar.SECOND)));
-        internalPrint(time.toString(), objects, Attribute.GREEN_TEXT());
+        internalPrint(time.toString(), "log", format, arguments, Attribute.GREEN_TEXT());
     }
 
-    private static final void internalPrint(String title, Object[] objects, Attribute... colors) {
-        if(objects == null)
-            objects = new Object[] {null};
+    private static void internalCustom(String type, Object format, Object... arguments) {
+        internalPrint(type.toUpperCase(), type.toLowerCase(), format, arguments, Attribute.CYAN_TEXT());
+    }
+
+
+
+    private static final void internalPrint(String title, String messageType, Object format, Object[] arguments, Attribute... titleColor) {
+
+        if(!isAllowed(messageType)) return;
+
+        if(arguments == null)
+            arguments = new Object[] {null};
             // Will print 'null'
 
         StringBuilder out = new StringBuilder();
 
-        out.append('[').append(colored(title, colors)).append(']');
+        out.append('[').append(colored(title, titleColor)).append(']');
         out.append(' ');
-        out.append(Arrays.stream(objects).map(o -> stringFor(o)).collect(Collectors.joining(", ")));
+        out.append(assembly(format, arguments));
 
         out.append(' ');
+
+        final int width = getConsoleWidth();
 
         if(Config.includeLineNumber) {
             String classAndLineString = classAndLineString(5);
-            final int width = getConsoleWidth();
-            int usedWidth = width - ((out.length() + classAndLineString.length() - (Config.coloredOutput ? colored("", colors).length() : 0)) % width);
+            int usedWidth = width - ((out.length() + classAndLineString.length() - (Config.coloredOutput ? colored("", titleColor).length() : 0)) % width);
             for(int i=0; i!=usedWidth; i++) out.append(' ');
             out.append(classAndLineString);
         }
 
+        //while(out.length() > width) {
+        //    savelyPrintln(out.substring(0, width));
+        //    out.delete(0, width);
+        //}
         savelyPrintln(out);
     }
+
+
+
+    private static boolean isAllowed(String messageType) {
+        try {
+            StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+            int index = elements.length > 5 ? 5 : elements.length - 1;
+            String cls = elements[index].getClassName();
+            return isEnabled(messageType, cls);
+        } catch(Exception e) {
+            return true;
+        }
+    }
+
+    private static String assembly(Object format, Object[] arguments) {
+        if(arguments != null && arguments.length == 0) return stringFor(format);
+        if(format == null || !(format instanceof String)) {
+            if(arguments == null) return stringFor(format) + ", null";
+            return stringFor(format) + ", " + Arrays.stream(arguments).map(o -> stringFor(o)).collect(Collectors.joining(", "));
+        }
+        StringBuilder out = new StringBuilder((String)format);
+        for(Object argument : arguments) {
+            int index = out.indexOf("{}");
+            if(index != -1)
+                out = out.replace(index, index + 2, stringFor(argument));
+            else out.append(", ").append(stringFor(argument));
+        }
+        return out.toString();
+    }
+
 
 
     private static final void savelyPrintln(Object x) {
@@ -787,6 +898,144 @@ public final class Console {
     }
 
 
+
+    /**
+     * A filter for output.
+     */
+    public static class OutputFilter {
+
+        private final HashMap<String, Boolean> settings = new HashMap<>();
+        public final String clsOrPkg;
+
+        /**
+         * By default, every filter behaves exactly like its super filter by simply
+         * requesting all its results.
+         * 
+         * @param clsOrPkg This filter's full class or package name
+         */
+        private OutputFilter(String clsOrPkg) {
+            this.clsOrPkg = clsOrPkg;
+            FILTERS.put(clsOrPkg, this);
+        }
+
+        /**
+         * Returns weather the given message type is currently enabled. If not specifically
+         * set this will return the result of the same call on the super-filter of this
+         * filter. If this filter is responsible for the default package, it will return some
+         * default values.
+         * 
+         * @param messageType The type of message to check for (case-insensitive)
+         * @return Weather the given message type is currently enabled by this filter
+         */
+        public boolean isEnabled(String messageType) {
+            messageType = messageType.toLowerCase();
+            Boolean enabled = settings.get(messageType);
+            if(enabled == null) return getSuperOrDefaultEnabled(messageType);
+            return enabled;
+        }
+
+        /**
+         * Sets weather this filter should allow messages of the given message type. Passing
+         * {@code null} will make the filter return the super filter's enabled state, or for
+         * the default package filter some default values.
+         * 
+         * @param messageType The type of message to set the filter state for
+         * @param enabled Weather the filter should allow, disallow or use the super filter's
+         *                enabled state for the messages of that type
+         */
+        public void setEnabled(String messageType, Boolean enabled) {
+            settings.put(messageType.toLowerCase(), enabled);
+        }
+
+        private boolean getSuperOrDefaultEnabled(String messageType) {
+            if(clsOrPkg.length() > 0)
+                return getFilter(clsOrPkg.substring(0, Math.max(clsOrPkg.lastIndexOf("."), 0))).isEnabled(messageType);
+
+            if("debug".equals(messageType.toLowerCase())) return false;
+            return true;
+        }
+    }
+
+
+
+    /**
+     * Returns weather messages of the given type posted from the specified class or package
+     * will be displayed. This returns exactly the same as calling
+     * <pre>getFilter(clsOrPkg).isEnabled(messageType);</pre>
+     * 
+     * @param messageType The type of message, for example {@code "info"} for info messages.
+     *                    Case-insensitive.
+     * @param clsOrPkg The full name of the class or package to check for
+     * @return Weather messages from the given class or package of the specified type will be
+     *         displayed
+     */
+    public static boolean isEnabled(String messageType, String clsOrPkg) {
+        return getFilter(clsOrPkg).isEnabled(messageType);
+    }
+
+    /**
+     * Returns weather messages of the given type posted from the specified class will be
+     * displayed. This returns exactly the same as calling
+     * <pre>getFilter(cls).isEnabled(messageType);</pre>
+     * 
+     * @param messageType The type of message, for example {@code "info"} for info messages.
+     *                    Case-insensitive.
+     * @param cls The class to check for
+     * @return Weather messages from the given class of the specified type will be displayed
+     */
+    public static boolean isEnabled(String messageType, Class<?> cls) {
+        return isEnabled(messageType, cls.getName());
+    }
+
+    /**
+     * Returns the {@link OutputFilter} for the specified class or package. If the exact class
+     * or package did not have a specific filter applied before a new one will be created,
+     * behaving exactly as the previously effective filter.
+     * 
+     * @param clsOrPkg The full name of the class or package to get or create the filter of
+     * @return The filter for exactly that class or package
+     */
+    public static OutputFilter getFilter(String clsOrPkg) {
+        OutputFilter filter = FILTERS.get(clsOrPkg);
+        if(filter != null) return filter;
+        return new OutputFilter(clsOrPkg);
+    }
+
+    /**
+     * Returns the {@link OutputFilter} for the specified class. If the exact class did not
+     * have a specific filter applied before a new one will be created, behaving exactly as
+     * the previously effective filter.
+     * 
+     * @param cls The class to get or create the filter of
+     * @return The filter for exactly that class
+     */
+    public static OutputFilter getFilter(Class<?> cls) {
+        return getFilter(cls.getName());
+    }
+
+    /**
+     * Removes the filter that applies for exactly that class or package, if there was one.
+     * 
+     * @param clsOrPkg The full name of the class or package to remove the filter of
+     * @return Weather a filter was removed
+     */
+    public static boolean removeFilter(String clsOrPkg) {
+        if(clsOrPkg.length() == 0) throw new IllegalArgumentException("Cannot remove the filter of the default package");
+        return FILTERS.remove(clsOrPkg) != null;
+    }
+
+    /**
+     * Removes the filter that applies for exactly that class, if there was one.
+     * 
+     * @param cls The class to remove the filter of
+     * @return Weather a filter was removed
+     */
+    public static boolean removeFilter(Class<?> cls) {
+        return removeFilter(cls.getName());
+    }
+
+
+
     public static void main(String[] args) {
         System.setErr(CONSOLE_WARN_STREAM);
         test();
@@ -794,6 +1043,20 @@ public final class Console {
 
 
     static void test() {
-        
+        //Console.getFilter("com.github.rccookie").setEnabled("debug", true);
+        Console.info("Hello World!");
+        Console.info("Hello {}!", "World");
+        Console.debug("Hello World!");
+        Console.debug("Hello {}!", "World");
+        Console.warn("Hello World!");
+        Console.warn("Hello {}!", "World");
+        Console.error("Hello World!");
+        Console.error("Hello {}!", "World");
+        Console.log("Hello World!");
+        Console.log("Hello {}!", "World");
+        Console.custom("Some type", "Hello World!");
+        Console.custom("Some type", "Hello {}!", "World");
+        Console.custom("Debug", "Hello World!");
+        Console.custom("Debug", "Hello {}!", "World");
     }
 }
