@@ -93,11 +93,11 @@ public final class Console {
      */
     public static final BufferedReader READER = new BufferedReader(new InputStreamReader(System.in));
 
-    private static final String ERROR_BLOCK = new StringBuilder("[").append(colored("ERROR", Attribute.RED_TEXT())).append("] ").toString();
+    private static final String ERROR_BLOCK = new StringBuilder("[").append(colored(OutputFilter.ERROR.toUpperCase(), Attribute.RED_TEXT())).append("] ").toString();
     private static final String ERROR_BLOCK_PLAIN = "[ERROR] ";
-    private static final String WARN_BLOCK = new StringBuilder("[").append(colored("WARN", Attribute.YELLOW_TEXT())).append("] ").toString();
+    private static final String WARN_BLOCK = new StringBuilder("[").append(colored(OutputFilter.WARN.toUpperCase(), Attribute.YELLOW_TEXT())).append("] ").toString();
     private static final String WARN_BLOCK_PLAIN = "[WARN] ";
-    private static final String INFO_BLOCK = new StringBuilder("[").append(colored("INFO", Attribute.BLUE_TEXT())).append("] ").toString();
+    private static final String INFO_BLOCK = new StringBuilder("[").append(colored(OutputFilter.INFO.toUpperCase(), Attribute.BLUE_TEXT())).append("] ").toString();
     private static final String INFO_BLOCK_PLAIN = "[INFO] ";
     private static final String INPUT_BLOCK = new StringBuilder("[").append(colored("INPUT", Attribute.MAGENTA_TEXT())).append("] ").toString();
     private static final String INPUT_BLOCK_PLAIN = "[INPUT] ";
@@ -121,6 +121,17 @@ public final class Console {
         @Override
         String getLineStart() {
             return getWarnBlock();
+        };
+    };
+
+    /**
+     * This print stream prints all information info the normal System.out
+     * output stream marked with {@code [WARN]}.
+     */
+    public static final PrintStream CONSOLE_LOG_STREAM = new NamedStream() {
+        @Override
+        String getLineStart() {
+            return getInfoBlock();
         };
     };
 
@@ -380,7 +391,7 @@ public final class Console {
     }
 
     public static final void newLine(int count, PrintStream out) {
-        for(int i=0; i<count; i++) out.println();
+        for(int i=0; i<count; i++) savelyPrintln("");
     }
 
 
@@ -415,6 +426,7 @@ public final class Console {
     private static boolean progressBarActive = false;
     private static int lastOn = -1;
     private static int lastPercentage = -1;
+    private static String lastProgressBarType = null;
 
     /**
      * Sets the given progress on the console progress bar. If there
@@ -423,9 +435,27 @@ public final class Console {
      * @param progress The progress to set, a value between {@code 0}
      *                 and {@code 1}, inslusive
      */
-    public static final void setProgress(double progress) {
+    public static void setProgress(double progress) {
+        internalSetProgress(OutputFilter.INFO, progress);
+    }
+
+    /**
+     * Sets the given progress on the console progress bar. If there
+     * is no progress bar yet there will be created one.
+     * 
+     * @param progress The progress to set, a value between {@code 0}
+     *                 and {@code 1}, inslusive
+     */
+    public static void setProgress(String type, double progress) {
+        internalSetProgress(type, progress);
+    }
+
+    private static final void internalSetProgress(String type, double progress) {
+        type = type.toLowerCase();
+        if(!isAllowedWrapped(type)) return;
+
         if(progress < 0) progress = 0;
-        if(progress > 1) progress = 1;
+        else if(progress > 1) progress = 1;
 
         int percentage = (int)Math.round(progress * 100);
         if(percentage == lastPercentage) return;
@@ -434,15 +464,17 @@ public final class Console {
 
         StringBuilder dif = new StringBuilder();
 
-        if(!progressBarActive) {
-            dif.append('[').append(colored("INFO", Attribute.BLUE_TEXT())).append(']');
+        if(!progressBarActive || !type.equals(lastProgressBarType)) {
+            if(progressBarActive) System.out.println();
+            lastProgressBarType = type;
+            dif.append('[').append(colored(type.equals(OutputFilter.LOG) ? timeStamp() : type.toUpperCase(), getColor(type))).append(']');
             dif.append(' ').append(PROB_START);
             for(int i=0; i<PROGRESS_BAR_WIDTH; i++) dif.append(i < on ? PROB_ON : ' ');
         }
         else {
             int percWidth = (lastPercentage + "").length();
             for(int i=0; i<percWidth+3; i++) dif.append('\b');
-            
+
             if(on != lastOn) {
                 int min = Math.min(on, lastOn);
                 for(int i=PROGRESS_BAR_WIDTH; i>min; i--) dif.append('\b');
@@ -464,6 +496,19 @@ public final class Console {
         else progressBarActive = true;
     }
 
+    private static Attribute getColor(String type) {
+        if(type.equals(OutputFilter.INFO)) return Attribute.BLUE_TEXT();
+        if(type.equals(OutputFilter.DEBUG)) return Attribute.CYAN_TEXT();
+        if(type.equals(OutputFilter.WARN)) return Attribute.YELLOW_TEXT();
+        if(type.equals(OutputFilter.ERROR)) return Attribute.RED_TEXT();
+        if(type.equals(OutputFilter.LOG)) return Attribute.GREEN_TEXT();
+        return Attribute.CYAN_TEXT();
+    }
+
+    private static boolean isAllowedWrapped(String messageType) {
+        return isAllowed(messageType);
+    }
+
 
     /**
      * Prints the current stack trace until this method call into the console.
@@ -480,38 +525,69 @@ public final class Console {
     /**
      * Prints a splitting line with the given title in the console.
      * 
-     * @param title The title of the split
+     * @param main The title of the split
      */
-    public static final void split(String title) {
-        if(title == null) title = "null";
+    private static final void internalSplit(String type, String main, Object... arguments) {
+        if(!isAllowedWrapped(type)) return;
 
-        int width = getConsoleWidth();
+        String string = assembly(main, arguments);
+        string = string.replace("\n", " ");
 
-        StringBuilder out = new StringBuilder(width);
-        out.append(getInfoBlock());
+        int consoleWidth = getConsoleWidth();
 
-        int lineLength = width - (title.length() + 4);
-        int firstHalf = lineLength / 2, secondHalf = lineLength - firstHalf;
-        firstHalf -= 7; // 7 = legnth of "[INFO] "
+        StringBuilder out = new StringBuilder(consoleWidth);
+        out.append('[').append(colored(type.equals(OutputFilter.LOG) ? timeStamp() : type.toUpperCase(), getColor(type))).append("] ");
 
+        int lineLength = consoleWidth - (length(string) + 4);
+        int firstHalf = lineLength / 2;
+        firstHalf -= length(out.toString());
+
+        out.append('-'); // To have at least one
         for(int i=0; i<firstHalf; i++) out.append('-');
-        out.append("< ").append(title).append(" >");
-        for(int i=0; i<secondHalf; i++) out.append('-');
+        out.append("< ").append(string).append(Ansi.RESET).append(" >");
+        while(length(out.toString()) < consoleWidth) out.append('-');
 
         savelyPrintln(out);
+    }
+
+    public static void split(String main, Object... arguments) {
+        internalSplit(OutputFilter.INFO, main, arguments);
+    }
+
+    public static void split(String title) {
+        internalSplit(OutputFilter.INFO, title, new Object[0]);
+    }
+
+    public static void splitCustom(String type, String main, Object... arguments) {
+        internalSplit(type, main, arguments);
+    }
+
+    public static void splitCustom(String type, String title) {
+        internalSplit(type, title, new Object[0]);
+    }
+
+
+
+    public static void line() {
+        internalLine(OutputFilter.INFO);
+    }
+
+    public static void line(String type) {
+        internalLine(type);
     }
 
     /**
      * Prints a splitting line in the console;
      */
-    public static final void split() {
-        int width = getConsoleWidth();
-        StringBuilder line = new StringBuilder(width);
-        line.append(getInfoBlock());
-        for(int i=0; i<width-7; i++) line.append('-'); // 7 = length of "[INFO] "
+    private static final void internalLine(String type) {
+        if(!isAllowedWrapped(type)) return;
+
+        int consoleWidth = getConsoleWidth();
+        StringBuilder line = new StringBuilder(consoleWidth);
+        line.append('[').append(colored(type.equals(OutputFilter.LOG) ? timeStamp() : type.toUpperCase(), getColor(type))).append("] ");
+        while(length(line.toString()) < consoleWidth) line.append('-');
         savelyPrintln(line);
     }
-
 
 
 
@@ -572,11 +648,11 @@ public final class Console {
      * @param x The object to print
      */
     public static final void custom(String type, Object x) {
-        if(type.toLowerCase().equals("info")) internalInfo(x);
-        else if(type.toLowerCase().equals("debug")) internalDebug(x);
-        else if(type.toLowerCase().equals("warn")) internalWarn(x);
-        else if(type.toLowerCase().equals("error")) internalError(x);
-        else if(type.toLowerCase().equals("log")) internalLog(x);
+        if(type.toLowerCase().equals(OutputFilter.INFO)) internalInfo(x);
+        else if(type.toLowerCase().equals(OutputFilter.DEBUG)) internalDebug(x);
+        else if(type.toLowerCase().equals(OutputFilter.WARN)) internalWarn(x);
+        else if(type.toLowerCase().equals(OutputFilter.ERROR)) internalError(x);
+        else if(type.toLowerCase().equals(OutputFilter.LOG)) internalLog(x);
         else internalCustom(type, x);
     }
 
@@ -589,11 +665,11 @@ public final class Console {
      * @param x The object to print
      */
     public static final void custom(String type, Object main, Object... arguments) {
-        if(type.toLowerCase().equals("info")) internalInfo(main, arguments);
-        else if(type.toLowerCase().equals("debug")) internalDebug(main, arguments);
-        else if(type.toLowerCase().equals("warn")) internalWarn(main, arguments);
-        else if(type.toLowerCase().equals("error")) internalError(main, arguments);
-        else if(type.toLowerCase().equals("log")) internalLog(main, arguments);
+        if(type.toLowerCase().equals(OutputFilter.INFO)) internalInfo(main, arguments);
+        else if(type.toLowerCase().equals(OutputFilter.DEBUG)) internalDebug(main, arguments);
+        else if(type.toLowerCase().equals(OutputFilter.WARN)) internalWarn(main, arguments);
+        else if(type.toLowerCase().equals(OutputFilter.ERROR)) internalError(main, arguments);
+        else if(type.toLowerCase().equals(OutputFilter.LOG)) internalLog(main, arguments);
         else internalCustom(type, main, arguments);
     }
 
@@ -707,14 +783,56 @@ public final class Console {
      * Prints the two objects as key-value pair as information in
      * the console.
      * <p>For example,
-     * <pre>{@code map("Hello", "World");}</pre>
+     * <pre>map("Hello", "World");</pre>
      * will result in the output {@code [INFO] Hello: World}
      * 
      * @param key The key to map the value to
      * @param value The value to map
      */
     public static final void map(final Object key, final Object value) {
-        internalInfo("{}: {}", new Object[] {key, value});
+        internalInfo("{}: {}", key, value);
+    }
+
+    /**
+     * Prints the two objects as key-value pair as information in
+     * the console.
+     * <p>For example,
+     * <pre>map("Hello", "World");</pre>
+     * will result in the output {@code [INFO] Hello: World}
+     * 
+     * @param key The key to map the value to
+     * @param value The value to map
+     */
+    public static final void map(final Object key, final Object value, Object...arguments) {
+        internalInfo(stringFor(key) + ": " + stringFor(value), arguments);
+    }
+
+    /**
+     * Prints the two objects as key-value pair as information in
+     * the console.
+     * <p>For example,
+     * <pre>map("Hello", "World");</pre>
+     * will result in the output {@code [DEBUG] Hello: World}
+     * 
+     * @param key The key to map the value to
+     * @param value The value to map
+     */
+    public static final void mapDebug(final Object key, final Object value) {
+        internalDebug("{}: {}", key, value);
+    }
+
+    /**
+     * Prints the two objects as key-value pair as information in
+     * the console.
+     * <p>For example,
+     * <pre>map("Hello", "World");</pre>
+     * will result in the output {@code [DEBUG] Hello: World}
+     * 
+     * @param key The key to map the value to
+     * @param value The value to map
+     */
+    public static final void mapDebug(final Object key, final Object value, Object...arguments) {
+        internalDebug(stringFor(key) + ": " + stringFor(value), arguments);
     }
 
     public static final String input(String prompt) {
@@ -740,22 +858,26 @@ public final class Console {
 
 
     private static final void internalInfo(Object format, Object... arguments) {
-        internalPrint("INFO", "info", format, arguments, Attribute.BLUE_TEXT());
+        internalPrint(OutputFilter.INFO, OutputFilter.INFO, format, arguments, getColor(OutputFilter.INFO));
     }
 
     private static final void internalDebug(Object format, Object... arguments) {
-        internalPrint("DEBUG", "debug", format, arguments, Attribute.CYAN_TEXT());
+        internalPrint(OutputFilter.DEBUG, OutputFilter.DEBUG, format, arguments, getColor(OutputFilter.DEBUG));
     }
 
     private static final void internalWarn(Object format, Object... arguments) {
-        internalPrint("WARN", "warn", format, arguments, Attribute.YELLOW_TEXT());
+        internalPrint(OutputFilter.WARN, OutputFilter.WARN, format, arguments, getColor(OutputFilter.WARN));
     }
 
     private static final void internalError(Object format, Object... arguments) {
-        internalPrint("ERROR", "error", format, arguments, Attribute.RED_TEXT());
+        internalPrint(OutputFilter.ERROR, OutputFilter.ERROR, format, arguments, getColor(OutputFilter.ERROR));
     }
 
     private static final void internalLog(Object format, Object... arguments) {
+        internalPrint(timeStamp(), OutputFilter.LOG, format, arguments, getColor(OutputFilter.LOG));
+    }
+
+    private static String timeStamp() {
         Calendar c = Calendar.getInstance();
         StringBuilder time = new StringBuilder(8);
         time.append(String.format("%02d", c.get(Calendar.HOUR_OF_DAY)));
@@ -763,7 +885,7 @@ public final class Console {
         time.append(String.format("%02d", c.get(Calendar.MINUTE)));
         time.append(':');
         time.append(String.format("%02d", c.get(Calendar.SECOND)));
-        internalPrint(time.toString(), "log", format, arguments, Attribute.GREEN_TEXT());
+        return time.toString();
     }
 
     private static void internalCustom(String type, Object format, Object... arguments) {
@@ -784,24 +906,129 @@ public final class Console {
 
         out.append('[').append(colored(title, titleColor)).append(']');
         out.append(' ');
-        out.append(assembly(format, arguments));
+        String titleBlock = out.toString();
 
-        out.append(' ');
+        String string = assembly(format, arguments);
+        string = string.replace("\n", " ");
+        if(Config.coloredOutput) string += Ansi.RESET;
 
-        final int width = getConsoleWidth();
+        final int consoleWidth = getConsoleWidth();
 
         if(Config.includeLineNumber) {
-            String classAndLineString = classAndLineString(5);
-            int usedWidth = width - ((out.length() + classAndLineString.length() - (Config.coloredOutput ? colored("", titleColor).length() : 0)) % width);
+
+            String classAndLineString = ' ' + classAndLineString(5);
+            
+            if(Config.coloredOutput) {
+                int remainingLength = consoleWidth - length(titleBlock);
+                int requiredRemainingLength = length(string) + classAndLineString.length();
+
+                if(requiredRemainingLength <= remainingLength) {
+                    out.append(string);
+                    int tabLength = remainingLength - requiredRemainingLength;
+                    for(int i=0; i<tabLength; i++) out.append(' ');
+                    out.append(classAndLineString);
+                }
+                else {
+                    StringBuilder remainingString = new StringBuilder(string);
+                    while(length(remainingString.toString()) > remainingLength) {
+                        String cutString = remainingString.substring(0, remainingLength);
+                        for(int i=1; length(cutString) < remainingLength; i++) {
+                            cutString = remainingString.substring(0, remainingLength + i);
+                        }
+                        remainingString.delete(0, cutString.length());
+                        out.append(cutString).append(Ansi.RESET).append('\n').append(titleBlock);
+                    }
+                    if(length(remainingString.toString()) <= remainingLength - classAndLineString.length()) {
+                        out.append(remainingString);
+                        int tabLength = remainingLength - (length(remainingString.toString()) + classAndLineString.length());
+                        for(int i=0; i<tabLength; i++) out.append(' ');
+                        out.append(classAndLineString);
+                    }
+                    else {
+                        out.append(remainingString).append('\n');
+                        out.append(titleBlock);
+                        int tabLength = remainingLength - classAndLineString.length();
+                        for(int i=0; i<tabLength; i++) out.append(' ');
+                        out.append(classAndLineString);
+                    }
+                }
+            }
+            else {
+                string = plain(string);
+
+                int remainingLength = consoleWidth - titleBlock.length();
+                int requiredRemainingLength = string.length() + classAndLineString.length();
+
+                if(requiredRemainingLength <= remainingLength) {
+                    out.append(string);
+                    int tabLength = remainingLength - requiredRemainingLength;
+                    for(int i=0; i<tabLength; i++) out.append(' ');
+                    out.append(classAndLineString);
+                }
+                else {
+                    StringBuilder remainingString = new StringBuilder(string);
+                    while(remainingString.length() > remainingLength) {
+                        String cutString = remainingString.substring(0, remainingLength);
+                        remainingString.delete(0, remainingLength);
+                        out.append(cutString).append('\n').append(titleBlock);
+                    }
+                    if(remainingString.length() <= remainingLength - classAndLineString.length()) {
+                        out.append(remainingString);
+                        int tabLength = remainingLength - (remainingString.length() + classAndLineString.length());
+                        for(int i=0; i<tabLength; i++) out.append(' ');
+                        out.append(classAndLineString);
+                    }
+                    else {
+                        out.append(remainingString).append('\n');
+                        out.append(titleBlock);
+                        int tabLength = remainingLength - classAndLineString.length();
+                        for(int i=0; i<tabLength; i++) out.append(' ');
+                        out.append(classAndLineString);
+                    }
+                }
+            }
+
+            savelyPrintln(out);
+
+
+            int usedWidth = consoleWidth - ((out.length() + classAndLineString.length() - (Config.coloredOutput ? colored("", titleColor).length() : 0)) % consoleWidth);
             for(int i=0; i!=usedWidth; i++) out.append(' ');
             out.append(classAndLineString);
         }
+        else {
 
-        //while(out.length() > width) {
-        //    savelyPrintln(out.substring(0, width));
-        //    out.delete(0, width);
-        //}
-        savelyPrintln(out);
+            out.append(string);
+
+            if(Config.coloredOutput) {
+                while(length(out.toString()) > consoleWidth) {
+                    String line = out.substring(0, consoleWidth);
+                    for(int i=1; length(line) < consoleWidth; i++) {
+                        line = out.substring(0, consoleWidth + i);
+                    }
+                    savelyPrintln(line + Ansi.RESET);
+                    out.delete(0, line.length());
+                    out.insert(0, titleBlock);
+                }
+            }
+            else {
+                while(out.length() > consoleWidth) {
+                    savelyPrintln(out.substring(0, consoleWidth));
+                    out.delete(0, consoleWidth);
+                    out.insert(0, titleBlock);
+                }
+            }
+            savelyPrintln(out);
+        }
+    }
+
+
+
+    private static String plain(String x) {
+        return x.replaceAll("\u001b\\[\\d+(;\\d+)*m", "");
+    }
+
+    private static int length(String x) {
+        return plain(x).length();
     }
 
 
@@ -904,6 +1131,12 @@ public final class Console {
      */
     public static class OutputFilter {
 
+        public static final String INFO = "info";
+        public static final String DEBUG = "debug";
+        public static final String WARN = "warn";
+        public static final String ERROR = "error";
+        public static final String LOG = "log";
+
         private final HashMap<String, Boolean> settings = new HashMap<>();
         public final String clsOrPkg;
 
@@ -951,7 +1184,7 @@ public final class Console {
             if(clsOrPkg.length() > 0)
                 return getFilter(clsOrPkg.substring(0, Math.max(clsOrPkg.lastIndexOf("."), 0))).isEnabled(messageType);
 
-            if("debug".equals(messageType.toLowerCase())) return false;
+            if(OutputFilter.DEBUG.equals(messageType.toLowerCase())) return false;
             return true;
         }
     }
@@ -963,7 +1196,7 @@ public final class Console {
      * will be displayed. This returns exactly the same as calling
      * <pre>getFilter(clsOrPkg).isEnabled(messageType);</pre>
      * 
-     * @param messageType The type of message, for example {@code "info"} for info messages.
+     * @param messageType The type of message, for example {@code OutputFilter.INFO} for info messages.
      *                    Case-insensitive.
      * @param clsOrPkg The full name of the class or package to check for
      * @return Weather messages from the given class or package of the specified type will be
@@ -978,7 +1211,7 @@ public final class Console {
      * displayed. This returns exactly the same as calling
      * <pre>getFilter(cls).isEnabled(messageType);</pre>
      * 
-     * @param messageType The type of message, for example {@code "info"} for info messages.
+     * @param messageType The type of message, for example {@code OutputFilter.INFO} for info messages.
      *                    Case-insensitive.
      * @param cls The class to check for
      * @return Weather messages from the given class of the specified type will be displayed
@@ -1014,10 +1247,22 @@ public final class Console {
     }
 
     /**
+     * Returns the filter of the default package that is the filter for all output, unless
+     * there was a filter for the specific class or package specified.
+     * 
+     * @return The default output filter
+     */
+    public static OutputFilter getDefaultFilter() {
+        return getFilter("");
+    }
+
+    /**
      * Removes the filter that applies for exactly that class or package, if there was one.
      * 
      * @param clsOrPkg The full name of the class or package to remove the filter of
      * @return Weather a filter was removed
+     * @throws IllegalArgumentException If an attempt was made to remove the default package
+     *                                  filter
      */
     public static boolean removeFilter(String clsOrPkg) {
         if(clsOrPkg.length() == 0) throw new IllegalArgumentException("Cannot remove the filter of the default package");
@@ -1042,21 +1287,20 @@ public final class Console {
     }
 
 
-    static void test() {
-        //Console.getFilter("com.github.rccookie").setEnabled("debug", true);
-        Console.info("Hello World!");
-        Console.info("Hello {}!", "World");
-        Console.debug("Hello World!");
-        Console.debug("Hello {}!", "World");
-        Console.warn("Hello World!");
-        Console.warn("Hello {}!", "World");
-        Console.error("Hello World!");
-        Console.error("Hello {}!", "World");
-        Console.log("Hello World!");
-        Console.log("Hello {}!", "World");
-        Console.custom("Some type", "Hello World!");
-        Console.custom("Some type", "Hello {}!", "World");
-        Console.custom("Debug", "Hello World!");
-        Console.custom("Debug", "Hello {}!", "World");
+    private static void test() {
+        Console.getDefaultFilter().setEnabled(OutputFilter.DEBUG, true);
+        Console.split("Hello World!");
+        Console.split("Hello {}!", "World");
+        Console.splitCustom(OutputFilter.DEBUG, "Hello World!");
+        Console.splitCustom(OutputFilter.DEBUG, "Hello {}!", "World");
+        Console.splitCustom(OutputFilter.WARN, "Hello World!");
+        Console.splitCustom(OutputFilter.WARN, "Hello {}!", "World");
+        Console.splitCustom(OutputFilter.ERROR, "Hello World!");
+        Console.splitCustom(OutputFilter.ERROR, "Hello {}!", "World");
+        Console.splitCustom(OutputFilter.LOG, "Hello World!");
+        Console.splitCustom(OutputFilter.LOG, "Hello {}!", "World");
+        Console.splitCustom("custom", colored("Hello World!", Attribute.RED_TEXT()));
+        Console.splitCustom("A stupidly long type of message that can still be handled", "Hello {}!", "World");
+        Console.line();
     }
 }
