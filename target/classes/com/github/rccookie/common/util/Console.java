@@ -30,7 +30,7 @@ public final class Console {
 
     private static final HashMap<String, OutputFilter> FILTERS = new HashMap<>();
     static {
-        new OutputFilter("");
+        new OutputFilter("", true);
     }
 
 
@@ -76,7 +76,7 @@ public final class Console {
          * Weather a print intp the console should include the line
          * number and class name that calls it.
          */
-        public static boolean includeLineNumber = true;
+        public static boolean includeLineNumber = false;
 
         /**
          * If {@code != null} this will be used instead of the
@@ -88,10 +88,15 @@ public final class Console {
     }
 
 
+
     /**
-     * A BufferedReader for the System.in input stream. Should not be closed.
+     * A BufferedReader for the System.in input stream. Cannot be closed.
      */
-    public static final BufferedReader READER = new BufferedReader(new InputStreamReader(System.in));
+    public static final BufferedReader READER = new BufferedReader(new InputStreamReader(System.in)) {
+        public void close() throws java.io.IOException {
+            throw new UnsupportedOperationException("This reader is public and must not be closed");
+        };
+    };
 
     private static final String ERROR_BLOCK = new StringBuilder("[").append(colored(OutputFilter.ERROR.toUpperCase(), Attribute.RED_TEXT())).append("] ").toString();
     private static final String ERROR_BLOCK_PLAIN = "[ERROR] ";
@@ -322,21 +327,21 @@ public final class Console {
 
 
     /**
-     * Width should not be bigger the 90 pixels.
+     * Width should not be bigger than console width.
      */
     public static final void paint(final BufferedImage image) {
         paint(image, 1);
     }
 
     /**
-     * Width should not be bigger the 90 pixels.
+     * Width should not be bigger than console width.
      */
     public static final void paint(final BufferedImage image, double scale) {
         paint(image, true, scale);
     }
 
     /**
-     * Width should not be bigger the 90 pixels.
+     * Width should not be bigger than console width.
      */
     public static final void paint(final BufferedImage image, final boolean negative, double scale) {
         paint(image, negative, scale, System.out);
@@ -544,7 +549,7 @@ public final class Console {
 
         out.append('-'); // To have at least one
         for(int i=0; i<firstHalf; i++) out.append('-');
-        out.append("< ").append(string).append(Ansi.RESET).append(" >");
+        out.append("< ").append(string).append(Config.coloredOutput ? Ansi.RESET : "").append(" >");
         while(length(out.toString()) < consoleWidth) out.append('-');
 
         savelyPrintln(out);
@@ -835,13 +840,13 @@ public final class Console {
         internalDebug(stringFor(key) + ": " + stringFor(value), arguments);
     }
 
-    public static final String input(String prompt) {
-        if(prompt == null) prompt = "null";
+    public static final String input(String prompt, Object... arguments) {
+        String string = assembly(prompt, arguments);
 
         StringBuilder out = new StringBuilder();
 
         out.append(getInputBlock());
-        out.append(prompt).append(" ");
+        out.append(string).append(" ");
 
         savelyPrint(out);
 
@@ -858,19 +863,19 @@ public final class Console {
 
 
     private static final void internalInfo(Object format, Object... arguments) {
-        internalPrint(OutputFilter.INFO, OutputFilter.INFO, format, arguments, getColor(OutputFilter.INFO));
+        internalPrint(OutputFilter.INFO.toUpperCase(), OutputFilter.INFO, format, arguments, getColor(OutputFilter.INFO));
     }
 
     private static final void internalDebug(Object format, Object... arguments) {
-        internalPrint(OutputFilter.DEBUG, OutputFilter.DEBUG, format, arguments, getColor(OutputFilter.DEBUG));
+        internalPrint(OutputFilter.DEBUG.toUpperCase(), OutputFilter.DEBUG, format, arguments, getColor(OutputFilter.DEBUG));
     }
 
     private static final void internalWarn(Object format, Object... arguments) {
-        internalPrint(OutputFilter.WARN, OutputFilter.WARN, format, arguments, getColor(OutputFilter.WARN));
+        internalPrint(OutputFilter.WARN.toUpperCase(), OutputFilter.WARN, format, arguments, getColor(OutputFilter.WARN));
     }
 
     private static final void internalError(Object format, Object... arguments) {
-        internalPrint(OutputFilter.ERROR, OutputFilter.ERROR, format, arguments, getColor(OutputFilter.ERROR));
+        internalPrint(OutputFilter.ERROR.toUpperCase(), OutputFilter.ERROR, format, arguments, getColor(OutputFilter.ERROR));
     }
 
     private static final void internalLog(Object format, Object... arguments) {
@@ -1052,7 +1057,7 @@ public final class Console {
         }
         StringBuilder out = new StringBuilder((String)format);
         for(Object argument : arguments) {
-            int index = out.indexOf("{}");
+            int index = out.toString().indexOf("{}"); // TeaVM does not like StringBuilder.indexOf() :/
             if(index != -1)
                 out = out.replace(index, index + 2, stringFor(argument));
             else out.append(", ").append(stringFor(argument));
@@ -1146,9 +1151,9 @@ public final class Console {
          * 
          * @param clsOrPkg This filter's full class or package name
          */
-        private OutputFilter(String clsOrPkg) {
+        private OutputFilter(String clsOrPkg, boolean register) {
             this.clsOrPkg = clsOrPkg;
-            FILTERS.put(clsOrPkg, this);
+            if(register) FILTERS.put(clsOrPkg, this);
         }
 
         /**
@@ -1177,6 +1182,20 @@ public final class Console {
          *                enabled state for the messages of that type
          */
         public void setEnabled(String messageType, Boolean enabled) {
+            settings.put(messageType.toLowerCase(), enabled);
+        }
+
+        /**
+         * Sets weather this filter should allow messages of the given message type. If this
+         * filter was specified to allow, disallow or default this message type, this will
+         * have no effect.
+         * 
+         * @param messageType The type of message to set the filter state for
+         * @param enabled Weather this filter should allow or disallow messages of the given
+         *                type, if never specified before
+         */
+        public void setDefault(String messageType, boolean enabled) {
+            if(settings.containsKey(messageType.toLowerCase())) return;
             settings.put(messageType.toLowerCase(), enabled);
         }
 
@@ -1221,6 +1240,20 @@ public final class Console {
     }
 
     /**
+     * Returns weather messages of the given type posted from the calling class will be
+     * displayed. This returns exactly the same as calling
+     * <pre>getFilter().isEnabled(messageType);</pre>
+     * 
+     * @param messageType The type of message, for example {@code OutputFilter.INFO} for info messages.
+     *                    Case-insensitive.
+     * @return Weather messages from the class that calls this method of the specified type will
+     *         be displayed
+     */
+    public static boolean isEnabled(String messageType) {
+        return getFilter().isEnabled(messageType);
+    }
+
+    /**
      * Returns the {@link OutputFilter} for the specified class or package. If the exact class
      * or package did not have a specific filter applied before a new one will be created,
      * behaving exactly as the previously effective filter.
@@ -1231,7 +1264,7 @@ public final class Console {
     public static OutputFilter getFilter(String clsOrPkg) {
         OutputFilter filter = FILTERS.get(clsOrPkg);
         if(filter != null) return filter;
-        return new OutputFilter(clsOrPkg);
+        return new OutputFilter(clsOrPkg, true);
     }
 
     /**
@@ -1244,6 +1277,29 @@ public final class Console {
      */
     public static OutputFilter getFilter(Class<?> cls) {
         return getFilter(cls.getName());
+    }
+
+    /**
+     * Returns the {@link OutputFilter} for the calling class. If the exact class did not
+     * have a specific filter applied before a new one will be created, behaving exactly as
+     * the previously effective filter.
+     * 
+     * @return The filter exactly for the class that calls this method
+     */
+    public static OutputFilter getFilter() {
+        try {
+            StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+            int index = elements.length > 2 ? 2 : elements.length - 1;
+            String cls = elements[index].getClassName();
+            return getFilter(cls);
+        } catch(Exception e) {
+            return new OutputFilter("", false) {
+                @Override
+                public boolean isEnabled(String messageType) {
+                    return true;
+                }
+            };
+        }
     }
 
     /**
@@ -1283,24 +1339,33 @@ public final class Console {
 
     public static void main(String[] args) {
         System.setErr(CONSOLE_WARN_STREAM);
-        test();
+        X.test();
+        Console.line();
+        Console.getFilter(X.class).setEnabled("info", false);
+        Console.getFilter(X.class).setEnabled("debug", false);
+        Console.getFilter(X.class).setEnabled("log", false);
+        Console.getFilter(X.class).setEnabled("warn", false);
+        Console.getFilter(X.class).setEnabled("error", false);
+        Console.getFilter(X.class).setEnabled("hello", false);
+        X.test();
     }
 
-
-    private static void test() {
-        Console.getDefaultFilter().setEnabled(OutputFilter.DEBUG, true);
-        Console.split("Hello World!");
-        Console.split("Hello {}!", "World");
-        Console.splitCustom(OutputFilter.DEBUG, "Hello World!");
-        Console.splitCustom(OutputFilter.DEBUG, "Hello {}!", "World");
-        Console.splitCustom(OutputFilter.WARN, "Hello World!");
-        Console.splitCustom(OutputFilter.WARN, "Hello {}!", "World");
-        Console.splitCustom(OutputFilter.ERROR, "Hello World!");
-        Console.splitCustom(OutputFilter.ERROR, "Hello {}!", "World");
-        Console.splitCustom(OutputFilter.LOG, "Hello World!");
-        Console.splitCustom(OutputFilter.LOG, "Hello {}!", "World");
-        Console.splitCustom("custom", colored("Hello World!", Attribute.RED_TEXT()));
-        Console.splitCustom("A stupidly long type of message that can still be handled", "Hello {}!", "World");
-        Console.line();
+    static class X {
+        private static void test() {
+            Console.getDefaultFilter().setEnabled(OutputFilter.DEBUG, true);
+            Console.info("Hello {}!", "World");
+            Console.debug("Hello {}!", "World");
+            Console.map("Hello", "World");
+            Console.log("Hello", "World");
+            Console.warn("Hello", "World");
+            Console.error("Hello", "World");
+            Console.custom("Hello", "World");
+            Console.split("Hello World!");
+            Console.split("Hello {}!", "World");
+            Console.splitCustom(OutputFilter.DEBUG, "Hello World!");
+            Console.splitCustom(OutputFilter.DEBUG, "Hello {}!", "World");
+            Console.setProgress(0.5);
+            Console.line();
+        }
     }
 }
