@@ -1,29 +1,29 @@
 package com.github.rccookie.util;
 
-import java.awt.Color;
+import com.diogonunes.jcolor.Ansi;
+import com.diogonunes.jcolor.Attribute;
+import com.github.rccookie.util.Grid.GridElement;
+
+import java.awt.*;
 import java.awt.geom.AffineTransform;
 import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
-
-import com.diogonunes.jcolor.Ansi;
-import com.diogonunes.jcolor.Attribute;
-import com.github.rccookie.util.Grid.GridElement;
 
 /**
  * A console utility class.
  */
 public final class Console {
-    private Console() { }
+    private Console() {
+        throw new UnsupportedOperationException("Console is a static utility class any may not be instantiated");
+    }
 
 
 
@@ -221,6 +221,10 @@ public final class Console {
 
     private static String getInputBlock() {
         return Config.coloredOutput ? INPUT_BLOCK : INPUT_BLOCK_PLAIN;
+    }
+
+    private static String getYesNoEnd(boolean inWarnColor) {
+        return inWarnColor ? "(" + Console.colored("Y/N", Attribute.RED_TEXT()) + ")? " : "(Y/N)? ";
     }
 
 
@@ -513,12 +517,37 @@ public final class Console {
      * Prints the current stack trace until this method call into the console.
      */
     public static void printStackTrace() {
+        if(isNotAllowedDoubleWrapped(OutputFilter.INFO)) return;
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+        internalInfo("--- Stack trace ---");
+        for(int i=2; i<stackTrace.length; i++)
+            savelyPrintln("\t" + stackTrace[i]);
+    }
+
+    /**
+     * Prints the current stack trace until this method call into the console.
+     */
+    public static void printStackTrace(String messageType) {
+        if(isNotAllowedDoubleWrapped(messageType)) return;
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+        internalCustom(messageType, "--- Stack trace ---");
+        for(int i=2; i<stackTrace.length; i++)
+            savelyPrintln("\t" + stackTrace[i]);
+    }
+
+    private static boolean isNotAllowedDoubleWrapped(String messageType) {
+        return isNotAllowedWrapped(messageType);
+    }
+
+    private static void internalPrintStackTrace(String type) {
         StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
         StackTraceElement[] reducedStackTrace = new StackTraceElement[stackTrace.length - 3];
+        int count = stackTrace.length - 3;
         System.arraycopy(stackTrace, 2, reducedStackTrace, 0, reducedStackTrace.length);
         String stackString = Arrays.stream(reducedStackTrace).map(StackTraceElement::toString).collect(Collectors.joining("\n\t"));
         savelyPrintln(">>>" + '\t' + stackString);
     }
+
 
 
     /**
@@ -590,6 +619,10 @@ public final class Console {
 
 
 
+    public static void info() {
+        internalInfo("");
+    }
+
     /**
      * Prints the given information in the console.
      *
@@ -614,6 +647,10 @@ public final class Console {
 
 
 
+    public static void debug() {
+        internalDebug("");
+    }
+
     /**
      * Prints the given information in the console.
      *
@@ -637,6 +674,10 @@ public final class Console {
     }
 
 
+
+    public static void custom(String type) {
+        internalCustom(type, "");
+    }
 
     /**
      * Prints the given object as a message of the given type (which will be
@@ -671,6 +712,12 @@ public final class Console {
         else internalCustom(type, main, arguments);
     }
 
+
+
+    public static void warn() {
+        internalWarn("");
+    }
+
     /**
      * Prints the given warning in the console.
      *
@@ -703,6 +750,12 @@ public final class Console {
      */
     public static void warn(Error error) {
         error.printStackTrace(CONSOLE_WARN_STREAM);
+    }
+
+
+
+    public static void error() {
+        internalError("");
     }
 
     /**
@@ -839,6 +892,45 @@ public final class Console {
             result = null;
         }
         return result;
+    }
+
+    public static boolean askYesNo(String prompt, Object... arguments) {
+        String string = assembly(prompt, arguments);
+
+        StringBuilder out = new StringBuilder();
+        out.append(getInputBlock());
+        if(!string.isEmpty()) {
+            out.append(string);
+            if(!string.endsWith(" ")) out.append(" ");
+        }
+        out.append(getYesNoEnd(false));
+
+        savelyPrint(out);
+
+        String result;
+        try {
+            result = READER.readLine().strip();
+            if(result.equalsIgnoreCase("y") || result.equalsIgnoreCase("j")) return true;
+            if(result.equalsIgnoreCase("n")) return false;
+
+            out = new StringBuilder();
+            out.append(getInputBlock());
+            if(!string.isEmpty()) {
+                out.append(string);
+                if(!string.endsWith(" ")) out.append(" ");
+            }
+            out.append(getYesNoEnd(true));
+
+            while(true) {
+                savelyPrint(out);
+                result = READER.readLine().strip();
+                if(result.equalsIgnoreCase("y") || result.equalsIgnoreCase("j")) return true;
+                if(result.equalsIgnoreCase("n")) return false;
+            }
+        } catch(Exception e) {
+            error(e);
+            return false;
+        }
     }
 
 
@@ -1298,11 +1390,5 @@ public final class Console {
      */
     public static boolean removeFilter(Class<?> cls) {
         return removeFilter(cls.getName());
-    }
-
-
-
-    public static void main(String[] args) {
-        System.setErr(CONSOLE_WARN_STREAM);
     }
 }

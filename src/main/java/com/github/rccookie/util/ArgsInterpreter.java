@@ -1,14 +1,13 @@
 package com.github.rccookie.util;
 
+import com.github.rccookie.util.Console.OutputFilter;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
-
-import com.github.rccookie.util.Console.OutputFilter;
 
 public final class ArgsInterpreter {
 
@@ -20,7 +19,7 @@ public final class ArgsInterpreter {
 
     public static String[] interprete(String[] args, Predicate<String> commands, BiPredicate<String, String> properties) {
 
-        if(Objects.requireNonNull(args, "args was null, it must have meen modified").length == 0) return args;
+        if(Arguments.checkNull(args).length == 0) return args;
 
         List<String> otherArgs = new ArrayList<>();
 
@@ -46,7 +45,7 @@ public final class ArgsInterpreter {
             }
         }
 
-        return otherArgs.toArray(new String[otherArgs.size()]);
+        return otherArgs.toArray(new String[0]);
     }
 
     public static String[] interprete(String[] args, Consumer<String> commands, BiConsumer<String, String> properties) {

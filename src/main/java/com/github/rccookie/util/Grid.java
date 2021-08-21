@@ -6,13 +6,11 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-import com.github.rccookie.geometry.Vector2D;
-
 
 /**
- * A grid represents a ordered 2-dimensional collection of elements.
+ * A grid represents an ordered 2-dimensional collection of elements.
  * <p>Grids may be infinite or have a fixed size. The may allow or
- * dissallow {@code null} values.
+ * disallow {@code null} values.
  * <p>In every location of the grid there can be exactly one value.
  * <p>Some implementation may allow floating point 'coordinates'.
  */
@@ -26,7 +24,7 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * @param column The column of the element
      * @return The element at the specified location
      */
-    public T get(int row, int column);
+    T get(int row, int column);
 
     /**
      * Sets the element at the specified location to the given value
@@ -37,12 +35,12 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * @param value The new value
      * @return The old value
      */
-    public T set(int row, int column, T value);
+    T set(int row, int column, T value);
 
     /**
      * Clears all elements from the grid.
      */
-    public void clear();
+    void clear();
 
 
     /**
@@ -51,7 +49,7 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * @param index The index if the row
      * @return A list containing all elements in the specified row
      */
-    public List<T> row(int index);
+    List<T> row(int index);
     
     /**
      * Returns all elements in the specified column in proper sequence.
@@ -59,7 +57,7 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * @param index The index if the column
      * @return A list containing all elements in the specified column
      */
-    public List<T> column(int index);
+    List<T> column(int index);
 
 
     /**
@@ -68,7 +66,7 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * 
      * @param action The action to execute for each element
      */
-    public void forEachLoc(Consumer<GridElement<T>> action);
+    void forEachLoc(Consumer<GridElement<T>> action);
 
 
     /**
@@ -76,16 +74,16 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * 
      * @return All elements
      */
-    public List<T> all();
+    List<T> all();
 
     /**
      * Returns all elements for which the given predicate returns {@code true}
      * when as argument a {@code GridElement} for the current object is passed.
      * 
-     * @param condition The condition under which an element is conform
+     * @param condition The condition under which an element is conforming
      * @return All elements for which the condition returns {@code true}
      */
-    public List<T> all(Predicate<GridElement<T>> condition);
+    List<T> all(Predicate<GridElement<T>> condition);
 
     /**
      * Returns one element in the grid for which the given predicate returns
@@ -93,10 +91,10 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * object is passed. If no elements conform the condition, {@code null}
      * will be returned.
      * 
-     * @param condition The condition under which an element is conform
+     * @param condition The condition under which an element is conforming
      * @return One element from the grid, or {@code null}
      */
-    public GridElement<T> oneElement(Predicate<GridElement<T>> condition);
+    GridElement<T> oneElement(Predicate<GridElement<T>> condition);
 
     /**
      * Returns one element in the grid for which the given predicate returns
@@ -104,16 +102,16 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * object is passed. If no elements conform the condition, {@code null}
      * will be returned. The difference to {@code oneElement} is that here
      * only the value itself will be returned.
-     * <p>By delfault this works as shown:
+     * <p>By default this works as shown:
      * <pre>
      * GridElement<T> oneElement = oneElement(condition);
      * return oneElement != null ? oneElement.value : null;
      * </pre>
      * 
-     * @param condition The condition under which an element is conform
+     * @param condition The condition under which an element is conforming
      * @return One value from the grid, or {@code null}
      */
-    public default T one(Predicate<GridElement<T>> condition) {
+    default T one(Predicate<GridElement<T>> condition) {
         GridElement<T> oneElement = oneElement(condition);
         return oneElement != null ? oneElement.value : null;
     }
@@ -121,34 +119,34 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
     /**
      * Returns if the given condition returns {@code true} for any element
      * in the grid.
-     * <p>By delfault this returns:
+     * <p>By default this returns:
      * <pre>one(condition) != null</pre>
      * 
-     * @param condition The condition under which an element is conform
+     * @param condition The condition under which an element is conforming
      * @return Weather the given condition is {@code true} for any element
      *         in the grid
      */
-    public default boolean any(Predicate<GridElement<T>> condition) {
+    default boolean any(Predicate<GridElement<T>> condition) {
         return one(condition) != null;
     }
 
     /**
      * Returns weather the grid contains the specified element.
-     * <p>By delfault this returns:
+     * <p>By default this returns:
      * <pre>any(e -> Objects.equals(e.value, element))</pre>
      * 
      * @param element The element to check for
      * @return {@code true} if there is at least one reference to the
      *         given element in the grid
      */
-    public default boolean contains(T element) {
+    default boolean contains(T element) {
         return any(e -> Objects.equals(e.value, element));
     }
 
     /**
      * Returns the first location of the given element in the table as
      * a {@code Vector2D}, or {@code null} of it is not contained.
-     * <p>By delfault this does:
+     * <p>By default this does:
      * <pre>
      * GridElement<T> oneElement = oneElement(e -> Objects.equals(e.value, element));
      * return oneElement != null ? oneElement.location() : null;
@@ -157,20 +155,20 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * @param element The element to get the location of
      * @return The elements first location, or {@code null}
      */
-    public default Vector2D locationOf(T element) {
+    default int[] locationOf(T element) {
         GridElement<T> oneElement = oneElement(e -> Objects.equals(e.value, element));
         return oneElement != null ? oneElement.location() : null;
     }
 
     /**
      * Returns weather the grid is empty.
-     * <p>By delfault this returns:
+     * <p>By default this returns:
      * <pre>!any(element -> element.value != null)</pre>
      * 
      * @return {@code true} if the grid only contains {@code null} values
      *         if any
      */
-    public default boolean isEmpty() {
+    default boolean isEmpty() {
         return !any(element -> element.value != null);
     }
 
@@ -182,7 +180,7 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
 
     /**
      * Returns an iterator that iterates over all elements in the grid.
-     * This may (not neccecarilly) contain {@code null} values.
+     * This may (not necessarily) contain {@code null} values.
      * <p>By default this returns:
      * <pre>all().iterator();</pre>
      */
@@ -198,14 +196,14 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
      * 
      * @return A clone of this grid
      */
-    public Grid<T> clone();
+    Grid<T> clone();
 
 
     /**
      * Represents an element in a table. Contains its value and its location in the table.
      * Used to give information about an elements state.
      */
-    public static class GridElement<T> {
+    class GridElement<T> {
 
         /**
          * The elements value.
@@ -213,16 +211,16 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
         public final T value;
 
         /**
-         * The elements location in the table.
+         * The element's location in the table.
          */
         private final int row, column;
 
         /**
          * Creates a new table element with the specified content.
          * 
-         * @param value
-         * @param row
-         * @param column
+         * @param value The element's value
+         * @param row The elements row
+         * @param column The elements column
          */
         protected GridElement(T value, int row, int column) {
             this.value = value;
@@ -233,8 +231,8 @@ public interface Grid<T> extends Iterable<T>, Cloneable {
         public int row() { return row; }
         public int column() { return column; }
 
-        public Vector2D location() {
-            return new Vector2D(row, column);
+        public int[] location() {
+            return new int[] { row, column };
         }
     }
 }

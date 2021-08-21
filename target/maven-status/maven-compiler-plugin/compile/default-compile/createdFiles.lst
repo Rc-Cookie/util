@@ -1,7 +1,9 @@
 com\diogonunes\jcolor\TextColorAttribute.class
 com\diogonunes\jcolor\Ansi.class
 com\diogonunes\jcolor\BackColorAttribute.class
+com\github\rccookie\util\NullArgumentException.class
 com\diogonunes\jcolor\Attribute.class
+com\github\rccookie\util\Arguments.class
 com\diogonunes\jcolor\ColorAttribute.class
 com\diogonunes\jcolor\SimpleAttribute.class
 com\diogonunes\jcolor\AnsiFormat.class
