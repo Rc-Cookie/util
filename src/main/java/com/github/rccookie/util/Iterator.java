@@ -8,19 +8,19 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 /**
- * An improved of {@link java.util.Iterator Iterator} with additional functionality. Because
+ * An improved version of {@link java.util.Iterator Iterator} with additional functionality. Because
  * {@link Iterable} is implemented as well this iterator can be used in for-each-loops.
  *
  * @param <T> The type of element supported by this iterator
  *
- * @see java.lang.Iterable
+ * @see Iterable
  * @see java.util.Iterator
  * @see #peek()
  * @see #stream()
  * @see #skip()
  * @see #skip(int)
  */
-public class Iterator<T> implements java.util.Iterator<T>, Iterable<T> {
+public class Iterator<T> implements IterableIterator<T> {
 
     private final java.util.Iterator<T> iterator;
 
@@ -57,11 +57,6 @@ public class Iterator<T> implements java.util.Iterator<T>, Iterable<T> {
     }
 
     @Override
-    public java.util.Iterator<T> iterator() {
-        return this;
-    }
-
-    @Override
     public boolean hasNext() {
         // If next is updated peek was called and didn't throw an exception and thus there must be a next item
         return isNextUpdated || iterator.hasNext();
@@ -69,7 +64,7 @@ public class Iterator<T> implements java.util.Iterator<T>, Iterable<T> {
 
     @Override
     public T next() {
-        if (!hasNext()) throw new NoSuchElementException("Iterator has no next element");
+        if(!hasNext()) throw new NoSuchElementException("Iterator has no next element");
         T result = isNextUpdated ? next : iterator.next();
         isNextUpdated = false;
         return result;
@@ -79,7 +74,7 @@ public class Iterator<T> implements java.util.Iterator<T>, Iterable<T> {
      * Skips the next element and returns itself. Does the same as calling the next method. However,
      * its intended use is like this:
      * <pre>Object second = iterator.skip().next();</pre>
-     * Of course skipping a non existing element will throw an {@code NoSuchElementException}.
+     * Of course skipping a non-existing element will throw an {@code NoSuchElementException}.
      *
      * @return This iterator
      * @throws NoSuchElementException If there is no next element
@@ -93,16 +88,15 @@ public class Iterator<T> implements java.util.Iterator<T>, Iterable<T> {
      * Skips the next elements and returns itself. Does the same as calling the next method so many
      * times. However, its intended use is like this:
      * <pre>Object second = iterator.skip(2).next();</pre>
-     * Of course skipping a non existing element will throw an {@code NoSuchElementException}.
+     * Of course skipping a non-existing element will throw an {@code NoSuchElementException}.
      *
      * @param count The number of elements to skip
      * @return This iterator
      * @throws NoSuchElementException If there are no {@code count} next element
      */
     public Iterator<T> skip(int count) {
-        for (int i=0; i<count; i++) {
+        for (int i=0; i<count; i++)
             next();
-        }
         return this;
     }
 

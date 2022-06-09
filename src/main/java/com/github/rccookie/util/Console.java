@@ -1,409 +1,479 @@
 package com.github.rccookie.util;
 
-import com.diogonunes.jcolor.Ansi;
-import com.diogonunes.jcolor.Attribute;
-import com.github.rccookie.util.Grid.GridElement;
-
-import java.awt.*;
-import java.awt.geom.AffineTransform;
-import java.awt.image.AffineTransformOp;
-import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.io.PrintStream;
-import java.util.List;
-import java.util.Map;
-import java.util.*;
-import java.util.Map.Entry;
-import java.util.stream.Collectors;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.HashMap;
+
+import com.diogonunes.jcolor.Ansi;
+import com.diogonunes.jcolor.Attribute;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
- * A console utility class.
+ * Utility class to log messages into the console or a selected output stream.
+ * <p>The messages can contain a variable number of elements. Each element will first
+ * be converted to a string. Arrays will automatically be converted to a readable
+ * format equivalently to {@link Arrays#deepToString(Object[])}. Then one element
+ * after the other gets appended with the delimiter {@value DELIMITER}, unless the
+ * already created message contains the literal {@code {}}. If it does, the {} will
+ * instead be replaced with the next message element.</p>
+ * <p>Every message has a tag. Using {@link Console.OutputFilter} specific tags can
+ * be hidden or shown, for all classes or for specific calling classes or packages.</p>
  */
+@SuppressWarnings({"StringRepeatCanBeUsed", "SameParameterValue", "DuplicatedCode"})
 public final class Console {
+
     private Console() {
-        throw new UnsupportedOperationException("Console is a static utility class any may not be instantiated");
+        throw new UnsupportedOperationException();
     }
-
-
-
-    private static final HashMap<String, OutputFilter> FILTERS = new HashMap<>();
-    static {
-        new OutputFilter("", true);
-    }
-
-
-
-    private static final char T_H = '\u2500';
-    private static final char T_V = '\u2502';
-    private static final char T_C = '\u253C';
-    private static final char T_TL = '\u250C';
-    private static final char T_TR = '\u2510';
-    private static final char T_BL = '\u2514';
-    private static final char T_BR = '\u2518';
-    private static final char T_L = '\u251C';
-    private static final char T_R = '\u2524';
-    private static final char T_T = '\u252C';
-    private static final char T_B = '\u2534';
-
-    private static final int DEFAULT_CELL_WIDTH = 20;
-
-    private static final char C_WHITE = ' ';
-    private static final char C_LIGHT = '\u2591';
-    private static final char C_MEDIUM = '\u2592';
-    private static final char C_DARK = '\u2593';
-    private static final char C_BLACK = '\u2588';
-
-    private static final int PROGRESS_BAR_WIDTH = 10;
-    private static final char PROB_START = '[';
-    private static final char PROB_END = ']';
-    private static final char PROB_ON = '.';
 
     /**
-     * Configuration for the console output.
+     * A BufferedReader on {@link System#in}. Cannot be closed.
+     */
+    public static final BufferedReader in = new BufferedReader(new InputStreamReader(System.in)) {
+        @Override
+        public void close() {
+            throw new UnsupportedOperationException("The console reader cannot be closed.");
+        }
+    };
+
+    /**
+     * Delimiter between console parameters
+     */
+    private static final String DELIMITER = " ";
+    /**
+     * Colors for the [INPUT] tag.
+     */
+    private static final Attribute[] INPUT_COLORS = { Attribute.MAGENTA_TEXT() };
+
+    /**
+     * Width of the progress bar's inner bar.
+     */
+    private static final int PROGRESS_BAR_WIDTH = 10;
+    /**
+     * Left border of the progress bar.
+     */
+    private static final char PROGRESS_BAR_START = '[';
+    /**
+     * Char for a full bar segment.
+     */
+    private static final char PROGRESS_BAR_ON = '.';
+    /**
+     * Right border of the progress bar.
+     */
+    private static final char PROGRESS_BAR_END = ']';
+
+
+    /**
+     * Contains configuration options for the console class.
      */
     public static final class Config {
-        private Config() { }
 
         /**
-         * Weather the output should be colored. Should be disabled
-         * if the console does not support coloring.
+         * The output stream of the console. Can be adjusted to change the output target without
+         * affecting {@link System#out}.
          */
-        public static boolean coloredOutput = true;
+        public static final TransferPrintStream out = new TransferPrintStream(System.out);
 
-        /*
-         * Weather a print into the console should include the line
-         * number and class name that calls it.
+
+        /**
+         * The maximum width of console output, in chars.
+         */
+        public static int width = 100;
+        /**
+         * Whether color codes should be printed.
+         */
+        public static boolean colored = true;
+        /**
+         * Whether all prints should include a time stamp.
+         */
+        public static boolean logTime = false;
+        /**
+         * Whether the file and line number where the print takes place should be printed. Useful
+         * for finding unwanted logs.
          */
         public static boolean includeLineNumber = false;
 
-        /**
-         * If {@code != null} this will be used instead of the
-         * measured width of the console. Note that the width is
-         * used for the line number and the first measurement will
-         * (currently) break the console input.
-         */
-        public static Integer manualConsoleWidth = null;
+        private Config() {
+            throw new UnsupportedOperationException();
+        }
     }
 
+    /**
+     * Is the progress bar currently active and not done?
+     */
+    private static boolean progressBarActive = false;
+    /**
+     * Last progress displayed by the progress bar, in chars.
+     */
+    private static int lastOn = -1;
+    /**
+     * Last progress percentage displayed.
+     */
+    private static int lastPercentage = -1;
+    /**
+     * Type of the last progress bar.
+     */
+    private static String lastProgressBarType = null;
 
 
     /**
-     * A BufferedReader for the System.in input stream. Cannot be closed.
+     * Prints an INFO message into the console.
+     *
+     * @param message The elements to display
      */
-    public static final BufferedReader READER = new BufferedReader(new InputStreamReader(System.in)) {
-        public void close() {
-            throw new UnsupportedOperationException("This reader is public and must not be closed");
-        }
-    };
-
-    private static final String ERROR_BLOCK = "[" + colored(OutputFilter.ERROR.toUpperCase(), Attribute.RED_TEXT()) + "] ";
-    private static final String ERROR_BLOCK_PLAIN = "[ERROR] ";
-    private static final String WARN_BLOCK = "[" + colored(OutputFilter.WARN.toUpperCase(), Attribute.YELLOW_TEXT()) + "] ";
-    private static final String WARN_BLOCK_PLAIN = "[WARN] ";
-    private static final String INFO_BLOCK = "[" + colored(OutputFilter.INFO.toUpperCase(), Attribute.BLUE_TEXT()) + "] ";
-    private static final String INFO_BLOCK_PLAIN = "[INFO] ";
-    private static final String INPUT_BLOCK = "[" + colored("INPUT", Attribute.MAGENTA_TEXT()) + "] ";
-    private static final String INPUT_BLOCK_PLAIN = "[INPUT] ";
+    public static void info(Object... message) {
+        write0(OutputFilter.INFO, message, 1);
+    }
 
     /**
-     * This print stream prints all information info the normal System.out
-     * output stream marked with {@code [ERROR]}.
+     * Prints a LOG message into the console.
+     *
+     * @param message The elements to display
      */
-    public static final PrintStream CONSOLE_ERROR_STREAM = new NamedStream() {
-        @Override
-        String getLineStart() {
-            return getErrorBlock();
-        }
-    };
+    public static void log(Object... message) {
+        write0(OutputFilter.LOG, message, 1);
+    }
 
     /**
-     * This print stream prints all information info the normal System.out
-     * output stream marked with {@code [WARN]}.
+     * Prints a LOG message into the console using the current time stamp
+     * as type, independent of {@link Config#logTime}.
+     *
+     * @param message The elements to display
      */
-    public static final PrintStream CONSOLE_WARN_STREAM = new NamedStream() {
-        @Override
-        String getLineStart() {
-            return getWarnBlock();
-        }
-    };
+    public static void logTime(Object... message) {
+        boolean oldState = Config.logTime;
+        Config.logTime = true;
+        write0(OutputFilter.LOG, message, 1);
+        Config.logTime = oldState;
+    }
 
     /**
-     * This print stream prints all information info the normal System.out
-     * output stream marked with {@code [WARN]}.
+     * Prints a DEBUG message into the console.
+     *
+     * @param message The elements to display
      */
-    public static final PrintStream CONSOLE_LOG_STREAM = new NamedStream() {
-        @Override
-        String getLineStart() {
-            return getInfoBlock();
-        }
-    };
+    public static void debug(Object... message) {
+        write0(OutputFilter.DEBUG, message, 1);
+    }
 
-    private static abstract class NamedStream extends PrintStream {
+    /**
+     * Prints a WARN message into the console.
+     *
+     * @param message The elements to display
+     */
+    public static void warn(Object... message) {
+        write0(OutputFilter.WARN, message, 1);
+    }
 
-        public NamedStream() {
-            super(System.out);
-        }
+    /**
+     * Prints the given throwable as WARN message into the console,
+     * with its stacktrace.
+     *
+     * @param t The throwable to print
+     */
+    public static void warn(Throwable t) {
+        printStackTrace0(OutputFilter.WARN, true, t, 1);
+    }
 
-        private boolean isLineStart = true;
-        @Override
-        public void print(String s) {
-            if(isLineStart) {
-                super.print(getLineStart() + s);
-                isLineStart = false;
-            }
-            else super.print(s);
-        }
-        abstract String getLineStart();
-        @Override
-        public void println() {
-            super.println();
-            isLineStart = true;
-        }
-        @Override
-        public void println(Object x) {
-            super.println(x);
-            isLineStart = true;
-        }
-        @Override
-        public void println(String x) {
-            super.println();
-            isLineStart = true;
-        }
-        @Override
-        public void println(boolean x) {
-            super.println();
-            isLineStart = true;
-        }
-        @Override
-        public void println(char x) {
-            super.println();
-            isLineStart = true;
-        }
-        @Override
-        public void println(char[] x) {
-            super.println();
-            isLineStart = true;
-        }
-        @Override
-        public void println(double x) {
-            super.println();
-            isLineStart = true;
-        }
-        @Override
-        public void println(float x) {
-            super.println();
-            isLineStart = true;
-        }
-        @Override
-        public void println(int x) {
-            super.println();
-            isLineStart = true;
-        }
-        @Override
-        public void println(long x) {
-            super.println();
-            isLineStart = true;
+    /**
+     * Prints an ERROR message into the console.
+     *
+     * @param message The elements to display
+     */
+    public static void error(Object... message) {
+        write0(OutputFilter.ERROR, message, 1);
+    }
+
+    /**
+     * Prints the given throwable as ERROR message into the console,
+     * with its stacktrace.
+     *
+     * @param t The throwable to print
+     */
+    public static void error(Throwable t) {
+        printStackTrace0(OutputFilter.ERROR, true, t, 1);
+    }
+
+    /**
+     * Prints a message with a custom tag into the console.
+     *
+     * @param messageType The tag of the message
+     * @param message The elements to print
+     */
+    public static void write(String messageType, Object... message) {
+        write0(messageType, message, 1);
+    }
+
+    /**
+     * Logs a {@code key: value} pair into the console.
+     *
+     * @param key The key to print
+     * @param value The value to print
+     * @param more More elements to print
+     */
+    public static void map(Object key, Object value, Object... more) {
+        map0(OutputFilter.LOG, 1, key, value, more);
+    }
+
+    /**
+     * Logs a {@code key: value} pair as debug message into the console.
+     *
+     * @param key The key to print
+     * @param value The value to print
+     * @param more More elements to print
+     */
+    public static void mapDebug(Object key, Object value, Object... more) {
+        map0(OutputFilter.DEBUG, 1, key, value, more);
+    }
+
+    /**
+     * Internal map method.
+     *
+     * @param messageType Message tag
+     * @param callDepth Call depth since last public method
+     * @param key Key to print
+     * @param value Value to print
+     * @param more More elements to print
+     */
+    @SuppressWarnings("SameParameterValue")
+    private static void map0(String messageType, int callDepth, Object key, Object value, Object... more) {
+        Object[] message = new Object[more != null ? more.length + 1 : 1];
+        message[0] = stringFor(key) + ": " + stringFor(value);
+        if(more != null)
+            System.arraycopy(more, 0, message, 1, more.length);
+        write0(messageType, message, callDepth+1);
+    }
+
+    /**
+     * Internal method to print the stack trace of an exception.
+     *
+     * @param messageType The message tag to use
+     * @param asException Whether the exception should be printed as exception,
+     *                    or only its stack trace without the exception name and message
+     * @param t The exception
+     * @param callDepth Call depth since last public method
+     */
+    private static void printStackTrace0(String messageType, boolean asException, Throwable t, int callDepth) {
+        if(hideMessageType(messageType, callDepth)) return;
+
+        StringWriter message = new StringWriter();
+        if(t != null) t.printStackTrace(new PrintWriter(message));
+        else message.append("null");
+
+        if(asException)
+            write0(messageType, new Object[] { message }, callDepth+1);
+        else {
+            String typePrefix = getTypePrefix(messageType);
+            int typeLength = length(typePrefix);
+            writeLine(typePrefix, typeLength, "--- Stack Trace ---", false, callDepth+1);
+
+            String[] lines = message.toString().split("\n");
+            for(int i=1; i<lines.length; i++)
+                writeLine(typePrefix, typeLength, lines[i].substring(4), false, callDepth+1);
         }
     }
 
-    private static String getErrorBlock() {
-        return Config.coloredOutput ? ERROR_BLOCK : ERROR_BLOCK_PLAIN;
+    /**
+     * Logs a line with the given title into the console.
+     *
+     * @param message The title in the center of the line
+     */
+    public static void split(Object... message) {
+        split0(OutputFilter.LOG, 1, message);
     }
 
-    private static String getWarnBlock() {
-        return Config.coloredOutput ? WARN_BLOCK : WARN_BLOCK_PLAIN;
+    /**
+     * Prints a line with a custom tag into the console.
+     *
+     * @param messageType The message tag
+     * @param message The title in the center of the line
+     */
+    public static void splitCustom(String messageType, Object... message) {
+        split0(messageType, 1, message);
     }
 
-    private static String getInfoBlock() {
-        return Config.coloredOutput ? INFO_BLOCK : INFO_BLOCK_PLAIN;
+    /**
+     * Internal method to print a line with a title into the console.
+     *
+     * @param messageType The message tag
+     * @param callDepth Call depth since last public method
+     * @param message The elements to use as title
+     */
+    @SuppressWarnings("SameParameterValue")
+    private static void split0(String messageType, int callDepth, Object... message) {
+        if(hideMessageType(messageType, callDepth)) return;
+
+        String string = assembleMessage(message);
+        string = string.replace("\n", " ");
+
+        StringBuilder out = new StringBuilder(Config.width);
+        out.append(getTypePrefix(messageType));
+
+        int lineLength = Config.width - (length(string) + 4);
+        int firstHalf = lineLength / 2;
+        firstHalf -= length(out.toString());
+
+        out.append('-'); // To have at least one
+        for(int i=0; i<firstHalf; i++)
+            out.append('-');
+        out.append("< ").append(string).append(Config.colored ? Ansi.RESET : "").append(" >");
+        while(length(out.toString()) < Config.width) out.append('-');
+
+        println(out.toString());
     }
 
-    private static String getInputBlock() {
-        return Config.coloredOutput ? INPUT_BLOCK : INPUT_BLOCK_PLAIN;
+    /**
+     * Returns the current time stamp, in the format {@code HH:MM:SS}.
+     *
+     * @return The current time stamp
+     */
+    @NotNull
+    private static String getTimeStamp() {
+        Calendar c = Calendar.getInstance();
+        return String.format("%02d", c.get(Calendar.HOUR_OF_DAY)) + ':' +
+                String.format("%02d", c.get(Calendar.MINUTE)) + ':' +
+                String.format("%02d", c.get(Calendar.SECOND));
     }
 
-    private static String getYesNoEnd(boolean inWarnColor) {
-        return inWarnColor ? "(" + Console.colored("Y/N", Attribute.RED_TEXT()) + ")? " : "(Y/N)? ";
+    /**
+     * Writes a message into the console.
+     *
+     * @param messageType The message tag
+     * @param message The message
+     * @param callDepth Call depth since last public method
+     */
+    private static void write0(String messageType, Object[] message, int callDepth) {
+        if(hideMessageType(messageType, callDepth)) return;
+
+        String type = getTypePrefix(messageType);
+        int typeLength = length(type);
+        String stringMessage = assembleMessage(message);
+
+        String[] lines = stringMessage.split("\n");
+        for(int i=0; i<lines.length; i++)
+            writeLine(type, typeLength, lines[i], Config.includeLineNumber && i == lines.length-1, callDepth+1);
     }
 
+    /**
+     * Prints a message string that does not include newlines into the console.
+     *
+     * @param typePrefix The tag name, as {@code [TAG]_} or {@code [HH:MM:SS]_[TAG]_}
+     * @param typeLength The length of typePrefix, but only visible characters
+     * @param message The message string
+     * @param includeLineNumber Whether to include the line number
+     * @param callDepth Call depth since last public method
+     */
+    private static void writeLine(String typePrefix, int typeLength, String message, boolean includeLineNumber, int callDepth) {
+        StringBuilder remaining = new StringBuilder(message);
+        int maxMessageLength = Math.max(1, Config.width - typeLength);
 
-
-    public static void table(final Map<?,?> map) {
-        table(map, DEFAULT_CELL_WIDTH);
-    }
-
-    public static void table(final Map<?,?> map, final int maxCellWidth) {
-        final Table<Object> table = new Table<>(2, map.size() + 1);
-
-        table.set(0, 0, "KEYS");
-        table.set(1, 0, "VALUES");
-
-        final Entry<?,?>[] entries = map.entrySet().toArray(new Entry[0]);
-        for(int i=0; i<map.size(); i++) {
-            table.set(0, i + 1, entries[i].getKey());
-            table.set(1, i + 1, entries[i].getValue());
+        if(includeLineNumber) {
+            String lineNumber = ' ' + getLineNumberString(callDepth + 1);
+            int messageLength = length(remaining.toString()) + lineNumber.length();
+            while(messageLength > maxMessageLength) messageLength -= maxMessageLength;
+            int spaces = maxMessageLength - messageLength;
+            for(int i=0; i<spaces; i++) remaining.append(' ');
+            remaining.append(lineNumber);
         }
-        table(table, 1, maxCellWidth);
-    }
-
-
-    public static void table(final Table<?> table) {
-        table(table, 1, DEFAULT_CELL_WIDTH);
-    }
-
-    public static void table(final Table<?> table, final int minCellWidth, final int maxCellWidth) {
-        table(table, minCellWidth, maxCellWidth, System.out);
-    }
-
-    public static  void table(final Table<?> table, final int minCellWidth, final int maxCellWidth, final PrintStream out) {
-        if(table == null) return;
-        final int r = table.rowCount(), c = table.columnCount();
-        if(r == 0) return;
-
-        final Table<String> sTable = new Table<>(r, c, loc -> {
-            Object element = table.get(loc.row(), loc.column());
-            return element != null ? element.toString() : null;}
-        );
-
-        final int[] cellWidths = new int[c];
-        for(int i=0; i<c; i++) {
-            cellWidths[i] = minCellWidth;
-            for (final String cell : sTable.column(i)) {
-                final int length = cell != null ? cell.length() : String.valueOf((String) null).length();
-                if (length <= cellWidths[i]) continue;
-                if (length > maxCellWidth) {
-                    cellWidths[i] = maxCellWidth;
-                    break;
+        while (true) {
+            if(length(remaining.toString()) > maxMessageLength) {
+                print(typePrefix);
+                StringBuilder line = new StringBuilder(remaining.substring(0, maxMessageLength));
+                remaining.delete(0, maxMessageLength);
+                while (length(line.toString()) < maxMessageLength) {
+                    line.append(remaining.charAt(0));
+                    remaining.deleteCharAt(0);
                 }
-                cellWidths[i] = length;
+                if(Config.colored) line.append(Ansi.RESET);
+                println(line.toString());
+            } else {
+                println(typePrefix + remaining);
+                return;
             }
-        }
-
-        out.println(line(c, cellWidths, -1));
-        for(int i=0; i<r; i++) {
-            out.println(row(sTable.row(i), cellWidths));
-            out.println(line(c, cellWidths, i+1 < r ? 0 : 1));
         }
     }
 
-    private static String line(final int cells, final int[] cellWidths, final int pos) {
-        final StringBuilder string = new StringBuilder();
+    /**
+     * Returns the type prefix for the given message tag, with time stamp if configured.
+     *
+     * @param type The message tag
+     * @return The tag prefix as {@code [TAG]_} or {@code [HH:MM:SS]_[TAG]_}
+     */
+    private static String getTypePrefix(String type) {
+        type = type.toUpperCase();
+        Attribute[] colors = getColors(type);
+        if(!Config.logTime) return '[' + colored(type, colors) + "] ";
+        String timeStamp = '[' + colored(getTimeStamp(), colors) + "] ";
+        if(type.equals("LOG")) return timeStamp;
+        return timeStamp + '[' + colored(type, colors) + "] ";
+    }
 
-        if(pos < 0) string.append(T_TL);
-        else if(pos > 0) string.append(T_BL);
-        else string.append(T_L);
+    /**
+     * Returns whether the given message is configured to be hidden.
+     *
+     * @param messageType The message tag
+     * @param callDepth Call depth since last public method
+     * @return Whether the message should not be printed
+     */
+    private static boolean hideMessageType(String messageType, int callDepth) {
+        try {
+            String cls = Thread.currentThread().getStackTrace()[callDepth + 3].getClassName();
+            return !isEnabled(messageType, cls);
+        } catch(Exception e) {
+            return false;
+        }
+    }
 
-        for(int i=0; i<cells; i++) {
-            string.append(T_H).append(T_H);
-            string.append(repeat(String.valueOf(T_H), Math.max(0, cellWidths[i])));
-            if(i+1 < cells) {
-                if(pos < 0) string.append(T_T);
-                else if(pos > 0) string.append(T_B);
-                else string.append(T_C);
-            }
-            else if(pos < 0) string.append(T_TR);
-            else if(pos > 0) string.append(T_BR);
-            else string.append(T_R);
+    /**
+     * Returns the current file and line number, as {@code File.java:line}.
+     *
+     * @param callDepth Call depth since last public method
+     * @return The current line number
+     */
+    @NotNull
+    private static String getLineNumberString(int callDepth) {
+        try {
+            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+            return elements[callDepth+2].getFileName() + ':' + elements[callDepth+2].getLineNumber();
+        } catch(Exception ignored) { }
+        return "";
+    }
+
+    /**
+     * Assembles the given message elements to a message string.
+     *
+     * @param message The message elements
+     * @return The message string
+     */
+    @NotNull
+    private static String assembleMessage(@Nullable Object[] message) {
+        if(message == null) return "null";
+        if(message.length == 0) return "";
+
+        StringBuilder string = new StringBuilder(stringFor(message[0]));
+        for(int i=1; i<message.length; i++) {
+            int index = string.toString().indexOf("{}");
+            String nextString = stringFor(message[i]);
+            if(index != -1) string.replace(index, index + 2, nextString);
+            else string.append(DELIMITER).append(nextString);
         }
         return string.toString();
     }
 
-    private static String row(final List<String> row, final int[] cellWidths) {
-        final StringBuilder string = new StringBuilder();
-        string.append(T_V);
-        for(int i=0; i<row.size(); i++) {
-            string.append(' ');
-            String content = row.get(i);
-            if(content == null) content = String.valueOf((String)null);
-            for(int j=0; j<cellWidths[i]; j++) {
-                if(j < content.length()) string.append(content.charAt(j));
-                else string.append(' ');
-            }
-            string.append(' ').append(T_V);
-        }
-        return string.toString();
-    }
-
-
-
-
     /**
-     * Width should not be bigger than console width.
+     * Returns a string representation for the given object.
+     *
+     * @param o The object to get the string representation of
+     * @return The string representation
      */
-    public static void paint(final BufferedImage image) {
-        paint(image, 1);
-    }
-
-    /**
-     * Width should not be bigger than console width.
-     */
-    public static void paint(final BufferedImage image, double scale) {
-        paint(image, true, scale);
-    }
-
-    /**
-     * Width should not be bigger than console width.
-     */
-    public static void paint(final BufferedImage image, final boolean negative, double scale) {
-        paint(image, negative, scale, System.out);
-    }
-
-    public static void paint(final BufferedImage image, final boolean negative, double scale, final PrintStream out) {
-        AffineTransform at = new AffineTransform();
-        at.scale(2.4 * scale, scale);
-        final BufferedImage scaledImage = new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR).filter(image, new BufferedImage((int)(2.4 * image.getWidth() * scale), (int)(image.getHeight() * scale), BufferedImage.TYPE_INT_ARGB));
-        paint(new Table<>(scaledImage.getHeight(), scaledImage.getWidth(), loc -> toBrightness(scaledImage, loc, negative)), out);
-    }
-
-    private static int toBrightness(final BufferedImage image, final GridElement<?> loc, final boolean negative) {
-        final Color c = new Color(image.getRGB(loc.column(), loc.row()));
-        final int brightness = (int)Math.sqrt(
-            0.299 * c.getRed() * c.getRed() +
-            0.587 * c.getGreen() * c.getGreen() +
-            0.114 * c.getBlue() * c.getBlue()
-        );
-        return negative ? 255 - brightness : brightness;
-    }
-
-    public static void paint(final Table<Integer> table) {
-        paint(table, System.out);
-    }
-
-    public static void paint(final Table<Integer> table, final PrintStream out) {
-        if(table == null) return;
-        for(int i=0; i<table.rowCount(); i++) {
-            StringBuilder row = new StringBuilder();
-            for(final int color : table.row(i)) row.append(colorChar(color));
-            out.println(row);
-        }
-    }
-
-    private static char colorChar(final int color) {
-        if(color < 32) return C_BLACK;
-        if(color < 96) return C_DARK;
-        if(color < 159) return C_MEDIUM;
-        if(color < 223) return C_LIGHT;
-        return C_WHITE;
-    }
-
-
-
-    public static void newLine() {
-        newLine(1);
-    }
-
-    public static void newLine(int count) {
-        for(int i=0; i<count; i++) savelyPrintln("");
-    }
-
-
-
-
-
-
-    private static String stringFor(Object o) {
-        if(o == null) return String.valueOf((String)null);
+    @NotNull
+    private static String stringFor(@Nullable Object o) {
+        if(o == null) return "null";
         if(!(o.getClass().isArray())) return o.toString();
         if(o instanceof boolean[]) return Arrays.toString((boolean[])o);
         if(o instanceof double[]) return Arrays.toString((double[])o);
@@ -416,20 +486,99 @@ public final class Console {
         return Arrays.deepToString((Object[])o);
     }
 
-
     /**
-     * Clears the console.
+     * Returns the given string colored in the given colors. Does nothing if
+     * colored output is disabled.
+     *
+     * @param message The message to colorize
+     * @param colors The colors and formatting for the message
+     * @return The colored messages
      */
-    public static void clear() {
-        savelyPrintln("\033[2J");
+    public static String colored(String message, Attribute... colors) {
+        return Config.colored ? Ansi.colorize(message, colors) : message;
     }
 
+    /**
+     * Removes all ANSI codes from the given message.
+     *
+     * @param message The message to de-colorize
+     * @return The plain message string
+     */
+    private static String removeColors(@NotNull String message) {
+        return Config.colored ? message.replaceAll("\u001b\\[\\d+(;\\d+)*m", "") : message;
+    }
 
+    /**
+     * Returns the colors for the given message tag.
+     *
+     * @param type The message tag
+     * @return The colors for the tag
+     */
+    private static Attribute[] getColors(@NotNull String type) {
+        type = type.toLowerCase();
+        if(type.equals(OutputFilter.LOG))   return new Attribute[] { Attribute.GREEN_TEXT() };
+        if(type.equals(OutputFilter.DEBUG)) return new Attribute[] { Attribute.CYAN_TEXT() };
+        if(type.equals(OutputFilter.WARN))  return new Attribute[] { Attribute.YELLOW_TEXT() };
+        if(type.equals(OutputFilter.ERROR)) return new Attribute[] { Attribute.RED_TEXT() };
+        if(type.equals(OutputFilter.INFO))  return new Attribute[] { Attribute.BLUE_TEXT() };
+        if(type.equals("input"))            return new Attribute[] { Attribute.MAGENTA_TEXT() };
+        return new Attribute[] { Attribute.CYAN_TEXT() };
+    }
 
-    private static boolean progressBarActive = false;
-    private static int lastOn = -1;
-    private static int lastPercentage = -1;
-    private static String lastProgressBarType = null;
+    /**
+     * Returns the visual length of the given message string.
+     *
+     * @param message The (potentially colored) message string
+     * @return The length of the message's visual part
+     */
+    private static int length(String message) {
+        return removeColors(message).length();
+    }
+
+    /**
+     * Safely prints the given message into the configured output stream.
+     *
+     * @param message The message to print
+     */
+    private static void print(String message) {
+        if(progressBarActive) {
+            Config.out.println();
+            progressBarActive = false;
+        }
+        Config.out.print(message);
+        Config.out.flush();
+    }
+
+    /**
+     * Safely prints the given message and a newline into the configured
+     * output stream.
+     *
+     * @param line The message to print
+     */
+    private static void println(String line) {
+        print(line);
+        Config.out.println();
+        Config.out.flush();
+    }
+
+    /**
+     * Logs the current stack trace into the console.
+     */
+    public static void printStackTrace() {
+        if(hideMessageType(OutputFilter.LOG, 1)) return; // Don't create unused exception
+        printStackTrace0(OutputFilter.LOG, false, new Exception(), 1);
+    }
+
+    /**
+     * Prints the current stack trace into the console with the given message tag.
+     *
+     * @param messageType The message tag
+     */
+    public static void printStackTrace(String messageType) {
+        if(hideMessageType(messageType, 1)) return; // Don't create unused exception
+        printStackTrace0(messageType, false, new Exception(), 1);
+    }
+
 
     /**
      * Sets the given progress on the console progress bar. If there
@@ -439,7 +588,7 @@ public final class Console {
      *                 and {@code 1}, inclusive
      */
     public static void setProgress(double progress) {
-        internalSetProgress(OutputFilter.INFO, progress);
+        internalSetProgress(OutputFilter.LOG, progress, 1);
     }
 
     /**
@@ -449,13 +598,20 @@ public final class Console {
      * @param progress The progress to set, a value between {@code 0}
      *                 and {@code 1}, inclusive
      */
-    public static void setProgress(String type, double progress) {
-        internalSetProgress(type, progress);
+    public static void setProgress(@NotNull String type, double progress) {
+        internalSetProgress(type, progress, 1);
     }
 
-    private static void internalSetProgress(String type, double progress) {
-        type = type.toLowerCase();
-        if(isNotAllowedWrapped(type)) return;
+    /**
+     * Internal method to set the progress of the progress bar.
+     *
+     * @param messageType The message tag
+     * @param progress The progress of the progress bar
+     * @param callDepth Call depth since last public method
+     */
+    private static void internalSetProgress(@NotNull String messageType, double progress, int callDepth) {
+        messageType = messageType.toLowerCase();
+        if(hideMessageType(messageType, callDepth)) return;
 
         if(progress < 0) progress = 0;
         else if(progress > 1) progress = 1;
@@ -467,426 +623,55 @@ public final class Console {
 
         StringBuilder dif = new StringBuilder();
 
-        if(!progressBarActive || !type.equals(lastProgressBarType)) {
+        if(!progressBarActive || !messageType.equals(lastProgressBarType)) {
             if(progressBarActive) System.out.println();
-            lastProgressBarType = type;
-            dif.append('[').append(colored(type.equals(OutputFilter.LOG) ? timeStamp() : type.toUpperCase(), getColor(type))).append(']');
-            dif.append(' ').append(PROB_START);
-            for(int i=0; i<PROGRESS_BAR_WIDTH; i++) dif.append(i < on ? PROB_ON : ' ');
+            lastProgressBarType = messageType;
+            dif.append(getTypePrefix(messageType));
+            dif.append(PROGRESS_BAR_START);
+            for(int i=0; i<PROGRESS_BAR_WIDTH; i++) dif.append(i < on ? PROGRESS_BAR_ON : ' ');
         }
         else {
             int percWidth = (lastPercentage + "").length();
-            dif.append(repeat("\b", Math.max(0, percWidth + 3)));
+            for(int i=0; i<percWidth+3; i++)
+                dif.append('\b');
 
             if(on != lastOn) {
                 int min = Math.min(on, lastOn);
-                dif.append(repeat("\b", Math.max(0, PROGRESS_BAR_WIDTH - min)));
+                for(int i=0; i<PROGRESS_BAR_WIDTH-min; i++)
+                    dif.append('\b');
 
-                for(int i=min; i<PROGRESS_BAR_WIDTH; i++) dif.append(i < on ? PROB_ON : ' ');
+                for(int i=min; i<PROGRESS_BAR_WIDTH; i++) dif.append(i < on ? PROGRESS_BAR_ON : ' ');
             }
         }
 
-        dif.append(PROB_END + " ").append(percentage).append("%");
+        dif.append(PROGRESS_BAR_END).append(' ').append(percentage).append("%");
 
-        System.out.print(dif);
+        Config.out.print(dif);
 
         lastOn = on;
         lastPercentage = percentage;
         if(percentage == 100) {
-            System.out.println();
+            Config.out.println();
             progressBarActive = false;
         }
         else progressBarActive = true;
     }
 
-    private static Attribute getColor(String type) {
-        if(type.equals(OutputFilter.INFO)) return Attribute.BLUE_TEXT();
-        if(type.equals(OutputFilter.DEBUG)) return Attribute.CYAN_TEXT();
-        if(type.equals(OutputFilter.WARN)) return Attribute.YELLOW_TEXT();
-        if(type.equals(OutputFilter.ERROR)) return Attribute.RED_TEXT();
-        if(type.equals(OutputFilter.LOG)) return Attribute.GREEN_TEXT();
-        return Attribute.CYAN_TEXT();
-    }
-
-    private static boolean isNotAllowedWrapped(String messageType) {
-        return isNotAllowed(messageType);
-    }
-
-
     /**
-     * Prints the current stack trace until this method call into the console.
-     */
-    public static void printStackTrace() {
-        if(isNotAllowedDoubleWrapped(OutputFilter.INFO)) return;
-        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-        internalInfo("--- Stack trace ---");
-        for(int i=2; i<stackTrace.length; i++)
-            savelyPrintln("\t" + stackTrace[i]);
-    }
-
-    /**
-     * Prints the current stack trace until this method call into the console.
-     */
-    public static void printStackTrace(String messageType) {
-        if(isNotAllowedDoubleWrapped(messageType)) return;
-        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-        internalCustom(messageType, "--- Stack trace ---");
-        for(int i=2; i<stackTrace.length; i++)
-            savelyPrintln("\t" + stackTrace[i]);
-    }
-
-    private static boolean isNotAllowedDoubleWrapped(String messageType) {
-        return isNotAllowedWrapped(messageType);
-    }
-
-    private static void internalPrintStackTrace(String type) {
-        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-        StackTraceElement[] reducedStackTrace = new StackTraceElement[stackTrace.length - 3];
-        int count = stackTrace.length - 3;
-        System.arraycopy(stackTrace, 2, reducedStackTrace, 0, reducedStackTrace.length);
-        String stackString = Arrays.stream(reducedStackTrace).map(StackTraceElement::toString).collect(Collectors.joining("\n\t"));
-        savelyPrintln(">>>" + '\t' + stackString);
-    }
-
-
-
-    /**
-     * Prints a splitting line with the given title in the console.
+     * Displays the given message into the console and returns the next entered line from
+     * {@link System#in}.
      *
-     * @param main The title of the split
+     * @param message The message elements
+     * @return The entered line, without newline
      */
-    private static void internalSplit(String type, String main, Object... arguments) {
-        if(isNotAllowedWrapped(type)) return;
+    public static String input(Object... message) {
+        String string = assembleMessage(message);
 
-        String string = assembly(main, arguments);
-        string = string.replace("\n", " ");
-
-        int consoleWidth = getConsoleWidth();
-
-        StringBuilder out = new StringBuilder(consoleWidth);
-        out.append('[').append(colored(type.equals(OutputFilter.LOG) ? timeStamp() : type.toUpperCase(), getColor(type))).append("] ");
-
-        int lineLength = consoleWidth - (length(string) + 4);
-        int firstHalf = lineLength / 2;
-        firstHalf -= length(out.toString());
-
-        out.append('-'); // To have at least one
-        out.append(repeat("-", Math.max(0, firstHalf)));
-        out.append("< ").append(string).append(Config.coloredOutput ? Ansi.RESET : "").append(" >");
-        while(length(out.toString()) < consoleWidth) out.append('-');
-
-        savelyPrintln(out);
-    }
-
-    public static void split(String main, Object... arguments) {
-        internalSplit(OutputFilter.INFO, main, arguments);
-    }
-
-    public static void split(String title) {
-        internalSplit(OutputFilter.INFO, title);
-    }
-
-    public static void splitCustom(String type, String main, Object... arguments) {
-        internalSplit(type, main, arguments);
-    }
-
-    public static void splitCustom(String type, String title) {
-        internalSplit(type, title);
-    }
-
-
-
-    public static void line() {
-        internalLine(OutputFilter.INFO);
-    }
-
-    public static void line(String type) {
-        internalLine(type);
-    }
-
-    /**
-     * Prints a splitting line in the console;
-     */
-    private static void internalLine(String type) {
-        if(isNotAllowedWrapped(type)) return;
-
-        int consoleWidth = getConsoleWidth();
-        StringBuilder line = new StringBuilder(consoleWidth);
-        line.append('[').append(colored(type.equals(OutputFilter.LOG) ? timeStamp() : type.toUpperCase(), getColor(type))).append("] ");
-        while(length(line.toString()) < consoleWidth) line.append('-');
-        savelyPrintln(line);
-    }
-
-
-
-    public static void info() {
-        internalInfo("");
-    }
-
-    /**
-     * Prints the given information in the console.
-     *
-     * @param x The information to print
-     */
-    public static void info(Object x) {
-        internalInfo(x);
-    }
-
-    /**
-     * Prints the given information in the console.
-     *
-     * @param main The information to print
-     * @param arguments Additional information to print. If {@code main} is a
-     *                  {@code String} and not {@code null} each "{}" will be
-     *                  replaced with the corresponding argument. Additional
-     *                  arguments will be comma-separated appended.
-     */
-    public static void info(Object main, Object... arguments) {
-        internalInfo(main, arguments);
-    }
-
-
-
-    public static void debug() {
-        internalDebug("");
-    }
-
-    /**
-     * Prints the given information in the console.
-     *
-     * @param x The information to print
-     */
-    public static void debug(Object x) {
-        internalDebug(x);
-    }
-
-    /**
-     * Prints the given information in the console.
-     *
-     * @param main The information to print
-     * @param arguments Additional information to print. If {@code main} is a
-     *                  {@code String} and not {@code null} each "{}" will be
-     *                  replaced with the corresponding argument. Additional
-     *                  arguments will be comma-separated appended.
-     */
-    public static void debug(Object main, Object... arguments) {
-        internalDebug(main, arguments);
-    }
-
-
-
-    public static void custom(String type) {
-        internalCustom(type, "");
-    }
-
-    /**
-     * Prints the given object as a message of the given type (which will be
-     * both title and filter type) into the console. If the type is one of the
-     * default types it will also be treated as such.
-     *
-     * @param type The title and filter type of this message
-     * @param x The object to print
-     */
-    public static void custom(String type, Object x) {
-        if(type.equalsIgnoreCase(OutputFilter.INFO)) internalInfo(x);
-        else if(type.equalsIgnoreCase(OutputFilter.DEBUG)) internalDebug(x);
-        else if(type.equalsIgnoreCase(OutputFilter.WARN)) internalWarn(x);
-        else if(type.equalsIgnoreCase(OutputFilter.ERROR)) internalError(x);
-        else if(type.equalsIgnoreCase(OutputFilter.LOG)) internalLog(x);
-        else internalCustom(type, x);
-    }
-
-    /**
-     * Prints the given object as a message of the given type (which will be
-     * both title and filter type) into the console. If the type is one of the
-     * default types it will also be treated as such.
-     *
-     * @param type The title and filter type of this message
-     */
-    public static void custom(String type, Object main, Object... arguments) {
-        if(type.equalsIgnoreCase(OutputFilter.INFO)) internalInfo(main, arguments);
-        else if(type.equalsIgnoreCase(OutputFilter.DEBUG)) internalDebug(main, arguments);
-        else if(type.equalsIgnoreCase(OutputFilter.WARN)) internalWarn(main, arguments);
-        else if(type.equalsIgnoreCase(OutputFilter.ERROR)) internalError(main, arguments);
-        else if(type.equalsIgnoreCase(OutputFilter.LOG)) internalLog(main, arguments);
-        else internalCustom(type, main, arguments);
-    }
-
-
-
-    public static void warn() {
-        internalWarn("");
-    }
-
-    /**
-     * Prints the given warning in the console.
-     *
-     * @param x The warning to print
-     */
-    public static void warn(Object x) {
-        internalWarn(x);
-    }
-
-    /**
-     * Prints the given warnings in the console.
-     */
-    public static void warn(Object main, Object... arguments) {
-        internalWarn(main, arguments);
-    }
-
-    /**
-     * Prints the given exception as a warning message into the console
-     *
-     * @param exception The exception to print
-     */
-    public static void warn(Exception exception) {
-        exception.printStackTrace(CONSOLE_WARN_STREAM);
-    }
-
-    /**
-     * Prints the given error as a warning message into the console
-     *
-     * @param error The error to print
-     */
-    public static void warn(Error error) {
-        error.printStackTrace(CONSOLE_WARN_STREAM);
-    }
-
-
-
-    public static void error() {
-        internalError("");
-    }
-
-    /**
-     * Prints the given error in the console.
-     *
-     * @param x The error to print
-     */
-    public static void error(Object x) {
-        internalError(x);
-    }
-
-    /**
-     * Prints the given errors in the console.
-     */
-    public static void error(Object main, Object... arguments) {
-        internalError(main, arguments);
-    }
-
-    /**
-     * Prints the given exception as an error message into the console
-     *
-     * @param exception The exception to print
-     */
-    public static void error(Exception exception) {
-        exception.printStackTrace(CONSOLE_ERROR_STREAM);
-    }
-
-    /**
-     * Prints the given error as an error message into the console
-     *
-     * @param error The error to print
-     */
-    public static void error(Error error) {
-        error.printStackTrace(CONSOLE_ERROR_STREAM);
-    }
-
-    /**
-     * Logs the current time in the console.
-     * <p>This has the same effect as logging {@code ""}.
-     */
-    public static void log() {
-        internalLog("");
-    }
-
-    /**
-     * Logs the given information together with the current time
-     * in the console.
-     *
-     * @param x The information to print
-     */
-    public static void log(Object x) {
-        internalLog(x);
-    }
-
-    /**
-     * Logs the given information together with the current time
-     * in the console.
-     */
-    public static void log(Object main, Object... arguments) {
-        internalLog(main, arguments);
-    }
-
-    /**
-     * Prints the two objects as key-value pair as information in
-     * the console.
-     * <p>For example,
-     * <pre>map("Hello", "World");</pre>
-     * will result in the output {@code [INFO] Hello: World}
-     *
-     * @param key The key to map the value to
-     * @param value The value to map
-     */
-    public static void map(final Object key, final Object value) {
-        internalInfo("{}: {}", key, value);
-    }
-
-    /**
-     * Prints the two objects as key-value pair as information in
-     * the console.
-     * <p>For example,
-     * <pre>map("Hello", "World");</pre>
-     * will result in the output {@code [INFO] Hello: World}
-     *
-     * @param key The key to map the value to
-     * @param value The value to map
-     */
-    public static void map(final Object key, final Object value, Object...arguments) {
-        internalInfo(stringFor(key) + ": " + stringFor(value), arguments);
-    }
-
-    /**
-     * Prints the two objects as key-value pair as information in
-     * the console.
-     * <p>For example,
-     * <pre>map("Hello", "World");</pre>
-     * will result in the output {@code [DEBUG] Hello: World}
-     *
-     * @param key The key to map the value to
-     * @param value The value to map
-     */
-    public static void mapDebug(final Object key, final Object value) {
-        internalDebug("{}: {}", key, value);
-    }
-
-    /**
-     * Prints the two objects as key-value pair as information in
-     * the console.
-     * <p>For example,
-     * <pre>map("Hello", "World");</pre>
-     * will result in the output {@code [DEBUG] Hello: World}
-     *
-     * @param key The key to map the value to
-     * @param value The value to map
-     */
-    public static void mapDebug(final Object key, final Object value, Object...arguments) {
-        internalDebug(stringFor(key) + ": " + stringFor(value), arguments);
-    }
-
-    public static String input(String prompt, Object... arguments) {
-        String string = assembly(prompt, arguments);
-
-        StringBuilder out = new StringBuilder();
-
-        out.append(getInputBlock());
-        if(!string.isEmpty()) out.append(string).append(" ");
-
-        savelyPrint(out);
+        print(getTypePrefix("input") + (string.isEmpty() ? "" : string + ' '));
 
         String result;
         try {
-            result = READER.readLine();
+            result = in.readLine();
         } catch(Exception e) {
             error(e);
             result = null;
@@ -894,36 +679,30 @@ public final class Console {
         return result;
     }
 
-    public static boolean askYesNo(String prompt, Object... arguments) {
-        String string = assembly(prompt, arguments);
+    /**
+     * Displays the given message and {@code "_(Y/N)?_"} into the console and returns {@code true}
+     * if the user entered "Y"/"y" and {@code false} on "N"/"n", and repeats the question otherwise.
+     *
+     * @param message The question elements
+     * @return Whether the user selected "y" or "n"
+     */
+    public static boolean inputYesNo(Object... message) {
+        String string = assembleMessage(message);
+        String messageWithoutYN = colored("INPUT", INPUT_COLORS) + (string.isEmpty() ? "" : string + ' ');
 
-        StringBuilder out = new StringBuilder();
-        out.append(getInputBlock());
-        if(!string.isEmpty()) {
-            out.append(string);
-            if(!string.endsWith(" ")) out.append(" ");
-        }
-        out.append(getYesNoEnd(false));
-
-        savelyPrint(out);
+        print(messageWithoutYN + getYesNoEnd(false));
 
         String result;
         try {
-            result = READER.readLine().strip();
+            result = strip(in.readLine());
             if(result.equalsIgnoreCase("y") || result.equalsIgnoreCase("j")) return true;
             if(result.equalsIgnoreCase("n")) return false;
 
-            out = new StringBuilder();
-            out.append(getInputBlock());
-            if(!string.isEmpty()) {
-                out.append(string);
-                if(!string.endsWith(" ")) out.append(" ");
-            }
-            out.append(getYesNoEnd(true));
+            String messageWithYN = messageWithoutYN + getYesNoEnd(true);
 
             while(true) {
-                savelyPrint(out);
-                result = READER.readLine().strip();
+                print(messageWithYN);
+                result = strip(in.readLine());
                 if(result.equalsIgnoreCase("y") || result.equalsIgnoreCase("j")) return true;
                 if(result.equalsIgnoreCase("n")) return false;
             }
@@ -933,261 +712,43 @@ public final class Console {
         }
     }
 
-
-
-    private static void internalInfo(Object format, Object... arguments) {
-        internalPrint(OutputFilter.INFO.toUpperCase(), OutputFilter.INFO, format, arguments, getColor(OutputFilter.INFO));
+    /**
+     * Returns {@code (Y/N)?_}, where "Y/N" is colored if wanted.
+     *
+     * @param inWarnColor Whether "Y/N" should be colored
+     * @return The y/n string
+     */
+    private static String getYesNoEnd(boolean inWarnColor) {
+        return inWarnColor ? "(" + colored("Y/N", Attribute.RED_TEXT()) + ")? " : "(Y/N)? ";
     }
 
-    private static void internalDebug(Object format, Object... arguments) {
-        internalPrint(OutputFilter.DEBUG.toUpperCase(), OutputFilter.DEBUG, format, arguments, getColor(OutputFilter.DEBUG));
-    }
-
-    private static void internalWarn(Object format, Object... arguments) {
-        internalPrint(OutputFilter.WARN.toUpperCase(), OutputFilter.WARN, format, arguments, getColor(OutputFilter.WARN));
-    }
-
-    private static void internalError(Object format, Object... arguments) {
-        internalPrint(OutputFilter.ERROR.toUpperCase(), OutputFilter.ERROR, format, arguments, getColor(OutputFilter.ERROR));
-    }
-
-    private static  void internalLog(Object format, Object... arguments) {
-        internalPrint(timeStamp(), OutputFilter.LOG, format, arguments, getColor(OutputFilter.LOG));
-    }
-
-    private static String timeStamp() {
-        Calendar c = Calendar.getInstance();
-        return String.format("%02d", c.get(Calendar.HOUR_OF_DAY)) +
-                ':' +
-                String.format("%02d", c.get(Calendar.MINUTE)) +
-                ':' +
-                String.format("%02d", c.get(Calendar.SECOND));
-    }
-
-    private static void internalCustom(String type, Object format, Object... arguments) {
-        internalPrint(type.toUpperCase(), type.toLowerCase(), format, arguments, Attribute.CYAN_TEXT());
-    }
-
-
-
-    private static void internalPrint(String title, String messageType, Object format, Object[] arguments, Attribute... titleColor) {
-
-        if(isNotAllowed(messageType)) return;
-
-        if(arguments == null)
-            arguments = new Object[] {null};
-            // Will print 'null'
-
-        StringBuilder out = new StringBuilder();
-
-        out.append('[').append(colored(title, titleColor)).append(']');
-        out.append(' ');
-        String titleBlock = out.toString();
-
-        String string = assembly(format, arguments);
-        string = string.replace("\n", " ");
-        if(Config.coloredOutput) string += Ansi.RESET;
-
-        final int consoleWidth = getConsoleWidth();
-
-        if(Config.includeLineNumber) {
-
-            String classAndLineString = ' ' + classAndLineString();
-
-            if(Config.coloredOutput) {
-                int remainingLength = consoleWidth - length(titleBlock);
-                int requiredRemainingLength = length(string) + classAndLineString.length();
-
-                if(requiredRemainingLength <= remainingLength) {
-                    out.append(string);
-                    int tabLength = remainingLength - requiredRemainingLength;
-                    out.append(repeat(" ", Math.max(0, tabLength)));
-                }
-                else {
-                    StringBuilder remainingString = new StringBuilder(string);
-                    while(length(remainingString.toString()) > remainingLength) {
-                        String cutString = remainingString.substring(0, remainingLength);
-                        for(int i=1; length(cutString) < remainingLength; i++) {
-                            cutString = remainingString.substring(0, remainingLength + i);
-                        }
-                        remainingString.delete(0, cutString.length());
-                        out.append(cutString).append(Ansi.RESET).append('\n').append(titleBlock);
-                    }
-                    if(length(remainingString.toString()) <= remainingLength - classAndLineString.length()) {
-                        out.append(remainingString);
-                        int tabLength = remainingLength - (length(remainingString.toString()) + classAndLineString.length());
-                        out.append(repeat(" ", Math.max(0, tabLength)));
-                    }
-                    else {
-                        out.append(remainingString).append('\n');
-                        out.append(titleBlock);
-                        int tabLength = remainingLength - classAndLineString.length();
-                        out.append(repeat(" ", Math.max(0, tabLength)));
-                    }
-                }
-            }
-            else {
-                string = plain(string);
-
-                int remainingLength = consoleWidth - titleBlock.length();
-                int requiredRemainingLength = string.length() + classAndLineString.length();
-
-                if(requiredRemainingLength <= remainingLength) {
-                    out.append(string);
-                    int tabLength = remainingLength - requiredRemainingLength;
-                    out.append(repeat(" ", Math.max(0, tabLength)));
-                }
-                else {
-                    StringBuilder remainingString = new StringBuilder(string);
-                    while(remainingString.length() > remainingLength) {
-                        String cutString = remainingString.substring(0, remainingLength);
-                        remainingString.delete(0, remainingLength);
-                        out.append(cutString).append('\n').append(titleBlock);
-                    }
-                    if(remainingString.length() <= remainingLength - classAndLineString.length()) {
-                        out.append(remainingString);
-                        int tabLength = remainingLength - (remainingString.length() + classAndLineString.length());
-                        out.append(repeat(" ", Math.max(0, tabLength)));
-                    }
-                    else {
-                        out.append(remainingString).append('\n');
-                        out.append(titleBlock);
-                        int tabLength = remainingLength - classAndLineString.length();
-                        out.append(repeat(" ", Math.max(0, tabLength)));
-                    }
-                }
-            }
-            out.append(classAndLineString);
-
-            savelyPrintln(out);
-
-
-            int usedWidth = consoleWidth - ((out.length() + classAndLineString.length() - (Config.coloredOutput ? colored("", titleColor).length() : 0)) % consoleWidth);
-            out.append(repeat(" ", Math.max(0, usedWidth)));
-            out.append(classAndLineString);
-        }
-        else {
-
-            out.append(string);
-
-            if(Config.coloredOutput) {
-                while(length(out.toString()) > consoleWidth) {
-                    String line = out.substring(0, consoleWidth);
-                    for(int i=1; length(line) < consoleWidth; i++) {
-                        line = out.substring(0, consoleWidth + i);
-                    }
-                    savelyPrintln(line + Ansi.RESET);
-                    out.delete(0, line.length());
-                    out.insert(0, titleBlock);
-                }
-            }
-            else {
-                while(out.length() > consoleWidth) {
-                    savelyPrintln(out.substring(0, consoleWidth));
-                    out.delete(0, consoleWidth);
-                    out.insert(0, titleBlock);
-                }
-            }
-            savelyPrintln(out);
-        }
-    }
-
-
-
-    private static String plain(String x) {
-        return x.replaceAll("\u001b\\[\\d+(;\\d+)*m", "");
-    }
-
-    private static int length(String x) {
-        return plain(x).length();
-    }
-
-    private static String repeat(String s, int count) {
-        StringBuilder out = new StringBuilder(s.length() * count);
-        //noinspection StringRepeatCanBeUsed
-        for(int i=0; i<count; i++) out.append(s);
+    /**
+     * Manual implementation of {@link String#strip()}.
+     *
+     * @param str The string to strip
+     * @return The stripped string
+     */
+    private static String strip(String str) {
+        StringBuilder out = new StringBuilder(str);
+        while(Character.isWhitespace(out.charAt(0)))
+            out.deleteCharAt(0);
+        while(Character.isWhitespace(out.charAt(out.length()-1)))
+            out.deleteCharAt(out.length()-1);
         return out.toString();
     }
-
-
-
-    private static boolean isNotAllowed(String messageType) {
-        try {
-            StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-            int index = elements.length > 5 ? 5 : elements.length - 1;
-            String cls = elements[index].getClassName();
-            return !isEnabled(messageType, cls);
-        } catch(Exception e) {
-            return false;
-        }
-    }
-
-    private static String assembly(Object format, Object[] arguments) {
-        if(arguments != null && arguments.length == 0) return stringFor(format);
-        if(!(format instanceof String)) {
-            if(arguments == null) return stringFor(format) + ", null";
-            return stringFor(format) + ", " + Arrays.stream(arguments).map(Console::stringFor).collect(Collectors.joining(", "));
-        }
-        StringBuilder out = new StringBuilder((String)format);
-        assert arguments != null;
-        for(Object argument : arguments) {
-            int index = out.toString().indexOf("{}"); // TeaVM does not like StringBuilder.indexOf() :/
-            if(index != -1)
-                //noinspection ConstantConditions
-                out = out.replace(index, index + 2, stringFor(argument));
-            else out.append(", ").append(stringFor(argument));
-        }
-        return out.toString();
-    }
-
-
-
-    private static void savelyPrintln(Object x) {
-        savelyPrint(x);
-        System.out.println();
-    }
-
-    private static void savelyPrint(Object x) {
-        if(progressBarActive) {
-            System.out.println();
-            progressBarActive = false;
-        }
-        System.out.print(x);
-    }
-
-
 
 
     /**
-     * Returns the given string colored in the specified color. If {@link Config#coloredOutput}
-     * is {@code false} or the color is {@code null}, the input string will be returned.
-     * Note that the size of the string will increase by {@code 9} if the text actually
-     * gets colored.
-     *
-     * @param string The string to color
-     * @param attributes Color and style attributes
-     * @return The painted string
+     * Configured filters, and the default filter.
      */
-    public static String colored(String string, Attribute...attributes) {
-        if(!Config.coloredOutput || attributes == null) return string;
-        return Ansi.colorize(string, attributes);
+    private static final HashMap<String, OutputFilter> FILTERS = new HashMap<>();
+    static {
+        new Console.OutputFilter("", true);
+        if("true".equals(System.getProperty("intellij.debug.agent"))) {
+            Console.getDefaultFilter().setEnabled(OutputFilter.DEBUG, true);
+            Config.width = 243;
+        }
     }
-
-    private static String classAndLineString() {
-        try {
-            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-            final int index = elements.length > 5 ? 5 : elements.length - 1;
-            return elements[index].getFileName() + ':' + elements[index].getLineNumber();
-        } catch(Exception ignored) { }
-        return "";
-    }
-
-    private static int getConsoleWidth() {
-        if(Config.manualConsoleWidth != null) return Config.manualConsoleWidth;
-        return 100;
-    }
-
-
 
     /**
      * A filter for output.
@@ -1201,6 +762,7 @@ public final class Console {
         public static final String LOG = "log";
 
         private final HashMap<String, Boolean> settings = new HashMap<>();
+        @NotNull
         public final String clsOrPkg;
 
         /**
@@ -1209,7 +771,7 @@ public final class Console {
          *
          * @param clsOrPkg This filter's full class or package name
          */
-        private OutputFilter(String clsOrPkg, boolean register) {
+        private OutputFilter(@NotNull String clsOrPkg, boolean register) {
             this.clsOrPkg = clsOrPkg;
             if(register) FILTERS.put(clsOrPkg, this);
         }
@@ -1223,7 +785,7 @@ public final class Console {
          * @param messageType The type of message to check for (case-insensitive)
          * @return Weather the given message type is currently enabled by this filter
          */
-        public boolean isEnabled(String messageType) {
+        public boolean isEnabled(@NotNull String messageType) {
             messageType = messageType.toLowerCase();
             Boolean enabled = settings.get(messageType);
             if(enabled == null) return getSuperOrDefaultEnabled(messageType);
@@ -1239,7 +801,7 @@ public final class Console {
          * @param enabled Weather the filter should allow, disallow or use the super filter's
          *                enabled state for the messages of that type
          */
-        public void setEnabled(String messageType, Boolean enabled) {
+        public void setEnabled(@NotNull String messageType, @Nullable Boolean enabled) {
             settings.put(messageType.toLowerCase(), enabled);
         }
 
@@ -1252,12 +814,12 @@ public final class Console {
          * @param enabled Weather this filter should allow or disallow messages of the given
          *                type, if never specified before
          */
-        public void setDefault(String messageType, boolean enabled) {
+        public void setDefault(@NotNull String messageType, boolean enabled) {
             if(settings.containsKey(messageType.toLowerCase())) return;
             settings.put(messageType.toLowerCase(), enabled);
         }
 
-        private boolean getSuperOrDefaultEnabled(String messageType) {
+        private boolean getSuperOrDefaultEnabled(@NotNull String messageType) {
             if(clsOrPkg.length() > 0)
                 return getFilter(clsOrPkg.substring(0, Math.max(Math.max(clsOrPkg.lastIndexOf("."), clsOrPkg.lastIndexOf("$")), 0))).isEnabled(messageType);
 
@@ -1278,7 +840,7 @@ public final class Console {
      * @return Weather messages from the given class or package of the specified type will be
      *         displayed
      */
-    public static boolean isEnabled(String messageType, String clsOrPkg) {
+    public static boolean isEnabled(@NotNull String messageType, @NotNull String clsOrPkg) {
         return getFilter(clsOrPkg).isEnabled(messageType);
     }
 
@@ -1292,7 +854,7 @@ public final class Console {
      * @param cls The class to check for
      * @return Weather messages from the given class of the specified type will be displayed
      */
-    public static boolean isEnabled(String messageType, Class<?> cls) {
+    public static boolean isEnabled(@NotNull String messageType, @NotNull Class<?> cls) {
         return isEnabled(messageType, cls.getName());
     }
 
@@ -1306,7 +868,7 @@ public final class Console {
      * @return Weather messages from the class that calls this method of the specified type will
      *         be displayed
      */
-    public static boolean isEnabled(String messageType) {
+    public static boolean isEnabled(@NotNull String messageType) {
         return getFilter().isEnabled(messageType);
     }
 
@@ -1318,8 +880,9 @@ public final class Console {
      * @param clsOrPkg The full name of the class or package to get or create the filter of
      * @return The filter for exactly that class or package
      */
-    public static OutputFilter getFilter(String clsOrPkg) {
-        OutputFilter filter = FILTERS.get(clsOrPkg);
+    @NotNull
+    public static OutputFilter getFilter(@NotNull String clsOrPkg) {
+        OutputFilter filter = FILTERS.get(Arguments.checkNull(clsOrPkg));
         if(filter != null) return filter;
         return new OutputFilter(clsOrPkg, true);
     }
@@ -1332,7 +895,8 @@ public final class Console {
      * @param cls The class to get or create the filter of
      * @return The filter for exactly that class
      */
-    public static OutputFilter getFilter(Class<?> cls) {
+    @NotNull
+    public static OutputFilter getFilter(@NotNull Class<?> cls) {
         return getFilter(cls.getName());
     }
 
@@ -1343,6 +907,7 @@ public final class Console {
      *
      * @return The filter exactly for the class that calls this method
      */
+    @NotNull
     public static OutputFilter getFilter() {
         try {
             StackTraceElement[] elements = Thread.currentThread().getStackTrace();
@@ -1352,7 +917,7 @@ public final class Console {
         } catch(Exception e) {
             return new OutputFilter("", false) {
                 @Override
-                public boolean isEnabled(String messageType) {
+                public boolean isEnabled(@NotNull String messageType) {
                     return true;
                 }
             };
@@ -1365,6 +930,7 @@ public final class Console {
      *
      * @return The default output filter
      */
+    @NotNull
     public static OutputFilter getDefaultFilter() {
         return getFilter("");
     }
@@ -1377,7 +943,7 @@ public final class Console {
      * @throws IllegalArgumentException If an attempt was made to remove the default package
      *                                  filter
      */
-    public static boolean removeFilter(String clsOrPkg) {
+    public static boolean removeFilter(@NotNull String clsOrPkg) {
         if(clsOrPkg.length() == 0) throw new IllegalArgumentException("Cannot remove the filter of the default package");
         return FILTERS.remove(clsOrPkg) != null;
     }
@@ -1388,7 +954,7 @@ public final class Console {
      * @param cls The class to remove the filter of
      * @return Weather a filter was removed
      */
-    public static boolean removeFilter(Class<?> cls) {
+    public static boolean removeFilter(@NotNull Class<?> cls) {
         return removeFilter(cls.getName());
     }
 }

@@ -2,6 +2,8 @@ package com.github.rccookie.util;
 
 import java.util.Objects;
 
+import org.jetbrains.annotations.NotNull;
+
 /**
  * Class to help to stop time, especially to evaluate the duration
  * of some executions.
@@ -154,8 +156,8 @@ public final class Stopwatch {
         return getPassedDays() / 31556736;
     }
 
-
     @Override
+    @NotNull
     public String toString() {
         StringBuilder string = new StringBuilder();
         double years   = getPassedYears();

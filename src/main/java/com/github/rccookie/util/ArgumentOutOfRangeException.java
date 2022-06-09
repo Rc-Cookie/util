@@ -1,7 +1,7 @@
 package com.github.rccookie.util;
 
 /**
- * Exception indicating that a given argument, most likely a number, was outside of
+ * Exception indicating that a given argument, most likely a number, was outside
  * the allowed range.
  */
 public class ArgumentOutOfRangeException extends IllegalArgumentException {
@@ -31,8 +31,8 @@ public class ArgumentOutOfRangeException extends IllegalArgumentException {
      * @param min The lowest allowed number. {@code null} will be displayed as -∞
      * @param max The highest allowed number. {@code null} will be displayed as ∞
      */
-    public ArgumentOutOfRangeException(double given, Double min, Double max) {
-        this(getMessageFor(given, min, max));
+    public ArgumentOutOfRangeException(double given, Double min, Double max, boolean startIncl, boolean endIncl) {
+        this(getMessageFor(given, min, max, startIncl, endIncl));
     }
 
     /**
@@ -42,8 +42,8 @@ public class ArgumentOutOfRangeException extends IllegalArgumentException {
      * @param min The lowest allowed number. {@code null} will be displayed as -∞
      * @param max The highest allowed number. {@code null} will be displayed as ∞
      */
-    public ArgumentOutOfRangeException(float given, Float min, Float max) {
-        this(getMessageFor(given, min, max));
+    public ArgumentOutOfRangeException(float given, Float min, Float max, boolean startIncl, boolean endIncl) {
+        this(getMessageFor(given, min, max, startIncl, endIncl));
     }
 
     /**
@@ -92,7 +92,7 @@ public class ArgumentOutOfRangeException extends IllegalArgumentException {
 
 
 
-    private static String getMessageFor(double given, Double min, Double max) {
+    private static String getMessageFor(double given, Double min, Double max, boolean startIncl, boolean endIncl) {
         boolean inverted = checkRange(given, min != null ? min : Double.NEGATIVE_INFINITY, max != null ? max : Double.POSITIVE_INFINITY);
         if(inverted) {
             Double temp = min;
@@ -100,14 +100,14 @@ public class ArgumentOutOfRangeException extends IllegalArgumentException {
             max = temp;
         }
         return "'" + given + "' is out of range for range " +
-                (inverted ? ']' : '[') +
+                (inverted ? (startIncl ? ']' : ')') : (startIncl ? '[' : '(')) +
                 (min != null && min != Double.NEGATIVE_INFINITY ? min : "-\u221e")
                 + ".." +
                 (max != null && max != Double.POSITIVE_INFINITY ? max : '\u221e')
-                + (inverted ? '[' : ']');
+                + (inverted ? (endIncl ? '[' : '(') : (endIncl ? ']' : ')'));
     }
 
-    private static String getMessageFor(float given, Float min, Float max) {
+    private static String getMessageFor(float given, Float min, Float max, boolean startIncl, boolean endIncl) {
         boolean inverted = checkRange(given, min != null ? min : Float.NEGATIVE_INFINITY, max != null ? max : Float.POSITIVE_INFINITY);
         if(inverted) {
             Float temp = min;
@@ -115,11 +115,11 @@ public class ArgumentOutOfRangeException extends IllegalArgumentException {
             max = temp;
         }
         return "'" + given + "' is out of range for range " +
-                (inverted ? ']' : '[') +
+                (inverted ? (startIncl ? ']' : ')') : (startIncl ? '[' : '(')) +
                 (min != null && min != Float.NEGATIVE_INFINITY ? min : "-\u221e")
                 + ".." +
                 (max != null && max != Float.POSITIVE_INFINITY ? max : '\u221e')
-                + (inverted ? '[' : ']');
+                + (inverted ? (endIncl ? '[' : '(') : (endIncl ? ']' : ')'));
     }
 
     private static String getMessageFor(long given, Long min, Long max) {

@@ -2,165 +2,90 @@ package com.github.rccookie.util;
 
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
+import java.util.function.Function;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class Cache<K, V> implements Map<K, V> {
 
-    private long cacheDuration;
+    private final Map<K,V> data;
+    private final Function<? super K,? extends V> generator;
 
-    private final HashMap<K,CachedItem<V>> cachedItems = new HashMap<>();
-
-
-
-
-
-    public Cache(long cacheDuration) {
-        setCacheDuration(cacheDuration);
+    public Cache(@NotNull Function<? super K,? extends V> generator) {
+        data = new HashMap<>();
+        this.generator = Arguments.checkNull(generator, "generator");
     }
 
-    public Cache(long cacheDuration, Map<? extends K, ? extends V> items) {
-        this(cacheDuration);
-        putAll(items);
+    public Cache(@NotNull Function<? super K,? extends V> generator, @NotNull Map<? extends K, ? extends V> map) {
+        data = new HashMap<>(map);
+        this.generator = Arguments.checkNull(generator, "generator");
     }
-
-
-
-
 
     @Override
     public int size() {
-        return keySet().size();
+        return data.size();
     }
 
     @Override
     public boolean isEmpty() {
-        return size() == 0;
+        return data.isEmpty();
     }
 
     @Override
     public boolean containsKey(Object key) {
-        return keySet().contains(key);
+        return data.containsKey(key);
     }
 
     @Override
     public boolean containsValue(Object value) {
-        return values().contains(value);
+        return data.containsValue(value);
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public V get(Object key) {
-        CachedItem<V> item = cachedItems.get(key);
-        if(item == null) return null;
-        V value = item.get();
-        if(value == null) {
-            cachedItems.remove(key);
-            return null;
-        }
-        return value;
+        return data.computeIfAbsent((K) key, generator);
     }
 
-    protected CachedItem<V> getCache(Object key) {
-        return cachedItems.get(key);
-    }
-
+    @Nullable
     @Override
     public V put(K key, V value) {
-        CachedItem<V> cachedItem = getCache(key);
-        if(cachedItem == null) {
-            cachedItems.put(key, new CachedItem<V>(cacheDuration, value));
-            return null;
-        }
-        return cachedItem.set(value);
-    }
-
-    public V getOrPutNew(K key, Supplier<V> newValueGenerator) {
-        CachedItem<V> cachedItem = getCache(key);
-        if(cachedItem == null) {
-            V newValue = newValueGenerator.get();
-            put(key, newValue);
-            return newValue;
-        }
-        return cachedItem.getOrSetNew(newValueGenerator);
+        return data.put(key, value);
     }
 
     @Override
     public V remove(Object key) {
-        V oldValue = get(key);
-        cachedItems.remove(key);
-        return oldValue;
+        return data.remove(key);
     }
 
     @Override
-    public void putAll(Map<? extends K, ? extends V> map) {
-        for(Map.Entry<? extends K, ? extends V> entry : map.entrySet()) put(entry.getKey(), entry.getValue());
+    public void putAll(@NotNull Map<? extends K, ? extends V> m) {
+        data.putAll(m);
     }
 
     @Override
     public void clear() {
-        cachedItems.clear();
+        data.clear();
     }
 
+    @NotNull
     @Override
     public Set<K> keySet() {
-        Set<K> keys = new HashSet<K>();
-        for(K key : cachedItems.keySet()) if(get(key) != null) keys.add(key);
-        return keys;
+        return data.keySet();
     }
 
+    @NotNull
     @Override
     public Collection<V> values() {
-        return keySet().stream().map(key -> get(key)).collect(Collectors.toList());
+        return data.values();
     }
 
+    @NotNull
     @Override
-    public Set<java.util.Map.Entry<K, V>> entrySet() {
-        return keySet().stream().map(key -> new Entry<K,V>(key, getCache(key))).collect(Collectors.toSet());
-    }
-
-
-
-
-    public void setCacheDuration(long cacheDuration) {
-        this.cacheDuration = cacheDuration;
-        for(CachedItem<V> value : cachedItems.values()) value.setCacheDuration(cacheDuration);
-    }
-
-    public long getCacheDuration() {
-        return cacheDuration;
-    }
-
-
-
-    
-    private static class Entry<K, V> implements Map.Entry<K, V> {
-
-        private final K key;
-        private CachedItem<V> value;
-
-        Entry(K key, CachedItem<V> value) {
-            this.key = key;
-            this.value = value;
-        }
-
-        @Override
-        public K getKey() {
-            return key;
-        }
-
-        @Override
-        public V getValue() {
-            return value.get();
-        }
-
-        @Override
-        public V setValue(V value) {
-            V previous = this.value.get();
-            this.value.set(value);
-            return previous;
-        }
+    public Set<Entry<K, V>> entrySet() {
+        return data.entrySet();
     }
 }
