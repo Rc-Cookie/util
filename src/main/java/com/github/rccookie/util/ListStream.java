@@ -38,10 +38,10 @@ import org.jetbrains.annotations.NotNull;
  * the list functionality gets disabled. This avoids that when using many intermediate
  * operations on a stream the contents will be buffered in each list without being used.
  * Once a list operation or a stream terminal operation have been used, all methods of
- * the instance can safely be reused as often as possible. The {@link #useAsList()}
- * method is designed as a list operation that has no action to indicate that the list
- * should be buffered even if the first (next) operation is an intermediate stream
- * operation.</p>
+ * the instance can safely be reused as often as possible. This also includes any stream
+ * operations, the result will always be consistent. The {@link #useAsList()} method is
+ * designed as a list operation that has no action to indicate that the list should be
+ * buffered even if the first (next) operation is an intermediate stream operation.</p>
  *
  * @param <T> Content type of the list
  */
@@ -183,6 +183,11 @@ public class ListStream<T> implements List<T>, Stream<T> {
         return subStream(new FilteringIterator<>(streamIterator(), predicate));
     }
 
+    public <R> ListStream<R> filterType(Class<R> type) {
+        Arguments.checkNull(type, "type");
+        return filter(type::isInstance).map(type::cast);
+    }
+
     @Override
     public <R> ListStream<R> map(Function<? super T, ? extends R> mapper) {
         return subStream(new MappingIterator<>(streamIterator(), mapper));
@@ -258,6 +263,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public void forEachOrdered(Consumer<? super T> action) {
+        checkStreamUse();
         for(T t : this)
             action.accept(t);
         close();
@@ -271,6 +277,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public T reduce(T identity, BinaryOperator<T> accumulator) {
+        checkStreamUse();
         T result = identity;
         for(T t : this)
             result = accumulator.apply(result, t);
@@ -280,6 +287,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public Optional<T> reduce(BinaryOperator<T> accumulator) {
+        checkStreamUse();
         Iterator<T> iterator = iterator();
         if(!iterator.hasNext()) return Optional.empty();
         T result = iterator.next();
@@ -291,6 +299,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public <U> U reduce(U identity, BiFunction<U, ? super T, U> accumulator, BinaryOperator<U> combiner) {
+        checkStreamUse();
         U result = identity;
         for(T t : this)
             result = accumulator.apply(result, t);
@@ -300,6 +309,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public <R> R collect(Supplier<R> supplier, BiConsumer<R, ? super T> accumulator, BiConsumer<R, R> combiner) {
+        checkStreamUse();
         R result = supplier.get();
         for(T t : this)
             accumulator.accept(result, t);
@@ -309,6 +319,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public <R, A> R collect(Collector<? super T, A, R> collector) {
+        checkStreamUse();
         A value = collector.supplier().get();
         BiConsumer<A, ? super T> accumulator = collector.accumulator();
         for(T t : this)
@@ -331,6 +342,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public long count() {
+        checkStreamUse();
         int result = size();
         close();
         return result;
@@ -338,6 +350,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public boolean anyMatch(Predicate<? super T> predicate) {
+        checkStreamUse();
         for(T t : this) {
             if(predicate.test(t)) {
                 close();
@@ -350,6 +363,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public boolean allMatch(Predicate<? super T> predicate) {
+        checkStreamUse();
         for(T t : this) {
             if(!predicate.test(t)) {
                 close();
@@ -367,6 +381,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public Optional<T> findFirst() {
+        checkStreamUse();
         Optional<T> result = isEmpty() ? Optional.empty() : Optional.of(first());
         close();
         return result;
@@ -505,10 +520,14 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public IterableListIterator<T> listIterator(int index) {
-        ensureBuffered(index);
+        useAsList();
+        for(int i=0, stop=index-buffer.size()+1; i<stop; i++) {
+            if(!iterator.hasNext()) break; // Don't throw exception when directly after last element
+            buffer.add(iterator.next());
+        }
 
         return new IterableListIterator<>() {
-            final ListIterator<T> bufferIt = buffer.listIterator(index);
+            final ListIterator<T> bufferIt = buffer.listIterator(index); // Will check bounds
 
             @Override
             public boolean hasNext() {
