@@ -29,16 +29,29 @@ import java.util.stream.LongStream;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
+import org.jetbrains.annotations.NotNull;
+
 /**
- * A lazily populated list with full list and stream functionality.
+ * A lazily populated list that can also be used as stream.
+ *
+ * <p>If the first operation used on the instance is a intermediate stream operation,
+ * the list functionality gets disabled. This avoids that when using many intermediate
+ * operations on a stream the contents will be buffered in each list without being used.
+ * Once a list operation or a stream terminal operation have been used, all methods of
+ * the instance can safely be reused as often as possible. The {@link #useAsList()}
+ * method is designed as a list operation that has no action to indicate that the list
+ * should be buffered even if the first (next) operation is an intermediate stream
+ * operation.</p>
  *
  * @param <T> Content type of the list
  */
 public class ListStream<T> implements List<T>, Stream<T> {
 
     private final Iterator<T> iterator;
-    private final List<T> buffer;
+    private List<T> buffer;
     private Runnable onClose = null;
+    private boolean closed = false;
+    private boolean listUsed = false;
 
     private ListStream(List<T> buffer) {
         this.iterator = IterableIterator.empty();
@@ -52,7 +65,9 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     private ListStream(Stream<T> stream) {
         this(stream.iterator());
-        onClose = stream::close;
+        onClose = () -> {
+            if(!listUsed) stream.close();
+        };
     }
 
     @Override
@@ -82,11 +97,13 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public boolean isEmpty() {
+        useAsList();
         return buffer.isEmpty() && !iterator.hasNext();
     }
 
     @Override
     public boolean contains(Object o) {
+        useAsList();
         if(buffer.contains(o)) return true;
         while(iterator.hasNext()) {
             T t = iterator.next();
@@ -103,31 +120,39 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public void forEach(Consumer<? super T> action) {
-        List.super.forEach(action);
+        useAsList();
+        for(T t : this)
+            action.accept(t);
+        // Don't close, also in List API
     }
 
     @Override
     public boolean isParallel() {
+        checkStreamUse();
         return false;
     }
 
     @Override
     public ListStream<T> sequential() {
+        checkStreamUse(); // Don't close because it's used again
         return this;
     }
 
     @Override
     public ListStream<T> parallel() {
+        checkStreamUse();
         return this;
     }
 
     @Override
     public ListStream<T> unordered() {
+        checkStreamUse();
         return this;
     }
 
     @Override
     public ListStream<T> onClose(Runnable closeHandler) {
+        checkStreamUse();
         Arguments.checkNull(closeHandler);
         if(onClose == null) onClose = closeHandler;
         else {
@@ -142,18 +167,25 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public void close() {
+        // Don't check whether close is already true; also used to indicate that
+        // an intermediate operation has started. onClose won't be called twice
+        // because it gets reset
+        if(!listUsed) {
+            closed = true;
+            buffer = null;
+        }
         if(onClose != null) onClose.run();
         onClose = null;
     }
 
     @Override
     public ListStream<T> filter(Predicate<? super T> predicate) {
-        return subStream(new FilteringIterator<>((Iterator<T>) iterator(), predicate));
+        return subStream(new FilteringIterator<>(streamIterator(), predicate));
     }
 
     @Override
     public <R> ListStream<R> map(Function<? super T, ? extends R> mapper) {
-        return subStream(new MappingIterator<>((Iterable<T>) iterator(), mapper));
+        return subStream(new MappingIterator<>(streamIterator(), mapper));
     }
 
     @Override
@@ -173,7 +205,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public <R> ListStream<R> flatMap(Function<? super T, ? extends Stream<? extends R>> mapper) {
-        return subStream(new FlatMappingIterator<>((Iterator<T>) iterator(), t -> mapper.apply(t).iterator()));
+        return subStream(new FlatMappingIterator<>(streamIterator(), t -> mapper.apply(t).iterator()));
     }
 
     @Override
@@ -193,7 +225,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public ListStream<T> distinct() {
-        return subStream(new DistinctIterator<>((Iterator<T>) iterator()));
+        return subStream(new DistinctIterator<>(streamIterator()));
     }
 
     @Override
@@ -208,17 +240,17 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public ListStream<T> peek(Consumer<? super T> action) {
-        return subStream(new PeekingIterator<>((Iterator<T>) iterator(), action));
+        return subStream(new PeekingIterator<>(streamIterator(), action));
     }
 
     @Override
     public ListStream<T> limit(long maxSize) {
-        return subStream(new LimitingIterator<>((Iterator<T>) iterator(), maxSize));
+        return subStream(new LimitingIterator<>(streamIterator(), maxSize));
     }
 
     @Override
     public ListStream<T> skip(long n) {
-        Iterator<T> iterator = iterator();
+        Iterator<T> iterator = streamIterator();
         for(long i=0; i<n && iterator.hasNext(); i++)
             iterator.next();
         return subStream(iterator);
@@ -226,14 +258,14 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public void forEachOrdered(Consumer<? super T> action) {
-        forEach(action);
+        for(T t : this)
+            action.accept(t);
         close();
     }
 
     @Override
     public Object[] toArray() {
-        bufferAll();
-        close();
+        useAsList();
         return buffer.toArray();
     }
 
@@ -288,17 +320,13 @@ public class ListStream<T> implements List<T>, Stream<T> {
     @Override
     public Optional<T> min(Comparator<? super T> comparator) {
         //noinspection SimplifyStreamApiCallChains
-        Optional<T> result = collect(Collectors.minBy(comparator));
-        close();
-        return result;
+        return collect(Collectors.minBy(comparator));
     }
 
     @Override
     public Optional<T> max(Comparator<? super T> comparator) {
         //noinspection SimplifyStreamApiCallChains
-        Optional<T> result = collect(Collectors.maxBy(comparator));
-        close();
-        return result;
+        return collect(Collectors.maxBy(comparator));
     }
 
     @Override
@@ -354,7 +382,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
     }
 
     @Override
-    public <U> U[] toArray(U[] a) {
+    public <U> U[] toArray(U @NotNull [] a) {
         bufferAll();
         close();
         //noinspection SuspiciousToArrayCall
@@ -378,8 +406,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
     @Override
     public boolean remove(Object o) {
         if(buffer.remove(o)) return true;
-        while(iterator.hasNext()) {
-            T t = iterator.next();
+        for(T t : this) {
             if(Objects.equals(o, t)) return true;
             else buffer.add(t);
         }
@@ -388,38 +415,41 @@ public class ListStream<T> implements List<T>, Stream<T> {
 
     @Override
     public boolean containsAll(Collection<?> c) {
+        useAsList();
         for(Object o : c)
             if(!contains(o)) return false;
         return true;
     }
 
     @Override
-    public boolean addAll(Collection<? extends T> c) {
+    public boolean addAll(@NotNull Collection<? extends T> c) {
         bufferAll();
         return buffer.addAll(c);
     }
 
     @Override
-    public boolean addAll(int index, Collection<? extends T> c) {
+    public boolean addAll(int index, @NotNull Collection<? extends T> c) {
         ensureBuffered(index - 1);
         return buffer.addAll(index, c);
     }
 
     @Override
     public boolean removeAll(Collection<?> c) {
+        useAsList();
         boolean out = false;
         for(Object o : c) out |= remove(o);
         return out;
     }
 
     @Override
-    public boolean retainAll(Collection<?> c) {
+    public boolean retainAll(@NotNull Collection<?> c) {
         bufferAll();
         return buffer.retainAll(c);
     }
 
     @Override
     public void clear() {
+        useAsList();
         buffer.clear();
         iterator.forEachRemaining($ -> {});
     }
@@ -455,7 +485,7 @@ public class ListStream<T> implements List<T>, Stream<T> {
     @Override
     public int indexOf(Object o) {
         int i = -1;
-        for(T t : this) {
+        for(T t : this) { // Indicates list usage
             i++;
             if(Objects.equals(o, t)) break;
         }
@@ -556,10 +586,17 @@ public class ListStream<T> implements List<T>, Stream<T> {
     }
 
     private Stream<T> normalStream() {
-        return StreamSupport.stream(spliterator(), false);
+        // Don't use spliterator(); indicates use as list
+        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(streamIterator(), 0), false);
+    }
+
+    private Iterator<T> streamIterator() {
+        useAsStream();
+        return listUsed ? iterator() : iterator;
     }
 
     private void ensureBuffered(int index) {
+        useAsList();
         for(int i=0, stop=index-buffer.size()+1; i<stop; i++) {
             if(!iterator.hasNext()) throw new IndexOutOfBoundsException(index);
             buffer.add(iterator.next());
@@ -567,50 +604,50 @@ public class ListStream<T> implements List<T>, Stream<T> {
     }
 
     private void bufferAll() {
+        useAsList();
         iterator.forEachRemaining(buffer::add);
     }
 
-
     /**
-     * Creates a new list lazily populated by the given stream.
+     * Indicates that this list stream is used as list. Thus, the internal buffer will
+     * not be cleared when a stream operation is used. Using any list operation also causes
+     * the same effect, but this method has no further side effects and unwanted computations.
      *
-     * @param stream The stream to wrap
-     * @param <T> Content type of the list
-     * @return The list stream
+     * @return This list stream
+     * @throws IllegalStateException If an intermediate stream operation has already been used
+     *                               as the first operation
      */
+    public ListStream<T> useAsList() {
+        if(closed) throw new IllegalStateException("Intermediate operation of stream has already been used, cannot operate as list anymore");
+        listUsed = true;
+        return this;
+    }
+
+    private void checkStreamUse() {
+        if(closed) throw new IllegalStateException("Stream closed");
+    }
+
+    private void useAsStream() {
+        checkStreamUse();
+        if(listUsed) return;
+        closed = true;
+        buffer = null;
+    }
+
+
+
     public static <T> ListStream<T> of(Stream<T> stream) {
         return new ListStream<>(stream);
     }
 
-    /**
-     * Creates a new list lazily populated using the given iterator.
-     *
-     * @param iterator The iterator used to populate the list
-     * @param <T> Content type of the list
-     * @return The list stream
-     */
     public static <T> ListStream<T> of(Iterator<T> iterator) {
         return new ListStream<>(iterator);
     }
 
-    /**
-     * Creates a new list with the contents of the given collection.
-     *
-     * @param contents The contents for the list
-     * @param <T> Content type of the list
-     * @return The list stream
-     */
     public static <T> ListStream<T> of(Collection<T> contents) {
         return new ListStream<>(new ArrayList<>(contents));
     }
 
-    /**
-     * Creates a new list with the contents of the given array.
-     *
-     * @param contents The contents for the list
-     * @param <T> Content type of the list
-     * @return The list stream
-     */
     @SafeVarargs
     public static <T> ListStream<T> of(T... contents) {
         return new ListStream<>(List.of(contents));
