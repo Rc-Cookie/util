@@ -3,7 +3,6 @@ package com.github.rccookie.util;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Objects;
 
 public class XORDecodedInputStream extends InputStream {
 
@@ -49,7 +48,7 @@ public class XORDecodedInputStream extends InputStream {
 
     @Override
     public long transferTo(OutputStream out) throws IOException {
-        Objects.requireNonNull(out, "out");
+        Arguments.checkNull(out, "out");
         long transferred = 0;
         int b;
         while ((b = read()) >= 0) {
