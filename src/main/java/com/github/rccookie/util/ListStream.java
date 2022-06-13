@@ -54,8 +54,9 @@ public class ListStream<T> implements List<T>, Stream<T> {
     private boolean listUsed = false;
 
     private ListStream(List<T> buffer) {
-        this.iterator = IterableIterator.empty();
         this.buffer = Arguments.checkNull(buffer);
+        this.iterator = IterableIterator.empty();
+        listUsed = true; // Don't clear the backing list when stream is used
     }
 
     private ListStream(Iterator<T> iterator) {
