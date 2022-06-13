@@ -1,8 +1,11 @@
 package com.github.rccookie.util;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
-import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Generic implementation of {@link Future} without specifying the
@@ -30,13 +33,13 @@ abstract class AbstractFutureImpl<V> implements FutureImpl<V> {
      */
     protected Exception failCause;
     /**
-     * The function to be called when the result is available.
+     * The functions to be called when the result is available.
      */
-    protected Consumer<? super V> then = null;
+    protected final List<Consumer<? super V>> onThen = new ArrayList<>();
     /**
-     * The function to be called when the result gets cancelled.
+     * The functions to be called when the result gets cancelled.
      */
-    protected Consumer<Exception> onCancel = null;
+    protected final List<Consumer<? super Exception>> onExcept = new ArrayList<>();
 
 
     @Override
@@ -44,7 +47,12 @@ abstract class AbstractFutureImpl<V> implements FutureImpl<V> {
         boolean out = !canceled && !done;
         canceled = done = true;
         failCause = null;
-        if(out && onCancel != null) onCancel.accept(null);
+        if(out) {
+            for(Consumer<? super Exception> handler : onExcept)
+                handler.accept(null);
+            onThen.clear();
+            onExcept.clear();
+        }
         return out;
     }
 
@@ -67,16 +75,19 @@ abstract class AbstractFutureImpl<V> implements FutureImpl<V> {
 
     @Override
     public Future<V> then(Consumer<? super V> action) {
-        then = action;
-        if(action != null && done && !canceled)
+        Arguments.checkNull(action, "action");
+        if(!done)
+            onThen.add(action);
+        else if(!canceled)
             action.accept(value);
         return this;
     }
 
     @Override
-    public Future<V> onCancel(Consumer<Exception> handler) {
-        onCancel = handler;
-        if(onCancel != null && canceled)
+    public Future<V> except(Consumer<? super Exception> handler) {
+        Arguments.checkNull(handler, "handler");
+        if(!done) onExcept.add(handler);
+        else if(canceled)
             handler.accept(failCause);
         return this;
     }
@@ -86,17 +97,84 @@ abstract class AbstractFutureImpl<V> implements FutureImpl<V> {
         if(isDone()) throw new IllegalStateException("The value cannot be set because the computation is already done");
         this.value = value;
         done = true;
-        if(then != null)
-            then.accept(value);
+        for(Consumer<? super V> a : onThen)
+            a.accept(value);
+        onThen.clear();
+        onExcept.clear();
     }
 
     @Override
-    public boolean fail(@NotNull Exception cause) throws IllegalStateException {
+    public boolean fail(@Nullable Exception cause) throws IllegalStateException {
         if(canceled) return false;
         if(done) throw new IllegalStateException("Result already computed");
         canceled = done = true;
         failCause = cause;
-        if(onCancel != null) onCancel.accept(cause);
+        if(cause != null && onExcept.isEmpty()) {
+            Console.warn("Uncaught exception in future:");
+            Console.warn(cause);
+        }
+        else for(Consumer<? super Exception> handler : onExcept)
+            handler.accept(cause);
         return true;
+    }
+
+    @Override
+    public <T> Future<T> map(Function<? super V, ? extends T> mapper) {
+        return flatMap(r -> Future.of(mapper.apply(r)));
+    }
+
+    @Override
+    public <T> Future<T> flatMap(Function<? super V, ? extends Future<T>> mapper) {
+        return new FlatMappedFutureImpl<>(this, mapper);
+    }
+
+    static class FlatMappedFutureImpl<I,O> extends AbstractFutureImpl<O> {
+
+        final Future<I> input;
+        Future<O> secondComputation;
+        private final Object lock = new Object();
+
+        public FlatMappedFutureImpl(Future<I> input, Function<? super I, ? extends Future<O>> mapper) {
+            this.input = input;
+            input.then(v -> {
+                synchronized(lock) {
+                    secondComputation = mapper.apply(v);
+                    for (Consumer<? super O> action : onThen)
+                        secondComputation.then(action);
+                    for (Consumer<? super Exception> handler : onExcept)
+                        secondComputation.except(handler);
+                    onThen.clear();
+                    onExcept.clear();
+                }
+            });
+            input.except(this::fail);
+        }
+
+        @Override
+        public O waitFor() throws IllegalStateException, UnsupportedOperationException {
+            input.waitFor(); // Calls 'then' action
+            assert secondComputation != null;
+            return secondComputation.waitFor();
+        }
+
+        @Override
+        public Future<O> then(Consumer<? super O> action) {
+            synchronized(lock) {
+                if(secondComputation == null)
+                    return super.then(action);
+            }
+            secondComputation.then(action);
+            return this;
+        }
+
+        @Override
+        public Future<O> except(Consumer<? super Exception> handler) {
+            synchronized(lock) {
+                if(secondComputation == null)
+                    return super.except(handler);
+            }
+            secondComputation.except(handler);
+            return this;
+        }
     }
 }
