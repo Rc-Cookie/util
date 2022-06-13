@@ -1,6 +1,6 @@
 package com.github.rccookie.util;
 
-import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Abstract definition of a future implementation that can be set to a value.
@@ -19,12 +19,13 @@ public interface FutureImpl<V> extends Future<V> {
     void complete(V value) throws IllegalStateException;
 
     /**
-     * Cancels this future because of a computation exception.
+     * Cancels this future because of a computation exception. Passing
+     * {@code null} will be interpreted like calling {@link #cancel()}.
      *
      * @param cause The reason why the computation was cancelled
      *              unexpectedly
      * @throws IllegalStateException If the result is already set
      * @return {@code false} if the computation was already canceled
      */
-    boolean fail(@NotNull Exception cause) throws IllegalStateException;
+    boolean fail(@Nullable Exception cause) throws IllegalStateException;
 }
