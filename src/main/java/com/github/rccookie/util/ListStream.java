@@ -664,8 +664,8 @@ public class ListStream<T> implements List<T>, Stream<T> {
         return new ListStream<>(iterator);
     }
 
-    public static <T> ListStream<T> of(Collection<T> contents) {
-        return new ListStream<>(new ArrayList<>(contents));
+    public static <T> ListStream<T> of(Iterable<T> iterable) {
+        return new ListStream<>(iterable.iterator());
     }
 
     @SafeVarargs
