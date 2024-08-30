@@ -35,7 +35,7 @@ import java.lang.annotation.*;
  * it returns {@code null} if object got collected which can happen at any time completely unexpectedly.
  */
 @Documented
-@Retention(RetentionPolicy.CLASS)
+@Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.FIELD, ElementType.PARAMETER, ElementType.LOCAL_VARIABLE, ElementType.TYPE_USE})
 public @interface Nullable {
   /**

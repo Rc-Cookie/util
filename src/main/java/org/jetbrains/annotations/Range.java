@@ -22,7 +22,7 @@ import java.lang.annotation.*;
  * Applying this annotation to other types is not correct.
  * <p>
  * Example:
- * <pre>{@code public @Range(from = 0, to = Integer.MAX_VALUE) int length() {
+ * <pre>{@code public @Range(from = 0) int length() {
  *   return this.length; // returns a non-negative integer
  * }}</pre>
  *
@@ -35,10 +35,10 @@ public @interface Range {
   /**
    * @return minimal allowed value (inclusive)
    */
-  long from();
+  long from() default Long.MIN_VALUE;
 
   /**
    * @return maximal allowed value (inclusive)
    */
-  long to();
+  long to() default Long.MAX_VALUE;
 }

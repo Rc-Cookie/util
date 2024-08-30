@@ -1,5 +1,7 @@
 package com.diogonunes.jcolor;
 
+import de.rccookie.math.Mathf;
+
 /**
  * Abstracts ANSI codes with intuitive names. It maps a description (e.g. RED_TEXT) with a code (e.g. 31).
  * @see <a href="https://en.wikipedia.org/wiki/ANSI_escape_code#Escape_sequences">Wikipedia, for a list of all codes available</a>
@@ -255,6 +257,17 @@ public abstract class Attribute {
      */
     public static Attribute BACK_COLOR(int r, int g, int b) {
         return new BackColorAttribute(r, g, b);
+    }
+
+    public static Attribute randomColor() {
+        int r = Mathf.randI(256 * 3);
+        int a = r & 0xFF;
+        int b = 255 - a;
+        if(r < 256)
+            return TEXT_COLOR(a, b, 0);
+        if(r < 512)
+            return TEXT_COLOR(0, a, b);
+        return TEXT_COLOR(b, 0, a);
     }
 
     /*
