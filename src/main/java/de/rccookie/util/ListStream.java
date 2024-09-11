@@ -50,13 +50,38 @@ public interface ListStream<T> extends ImmutableList<T>, Stream<T> {
     @Override
     IterableListIterator<T> listIterator(int index);
 
+    /**
+     * Ass ListStreams are sequential by nature, this method just returns this
+     * ListStream itself.
+     *
+     * @return This list stream
+     */
     @NotNull
     @Override
-    ListStream<T> sequential();
+    default ListStream<T> sequential() {
+        return this;
+    }
 
+    /**
+     * Returns a parallel stream version of this ListStream. Since list streams
+     * are sequential by nature, the returned stream is not a list stream.
+     *
+     * @return A parallel stream over the contents of this list stream
+     */
     @NotNull
     @Override
-    ListStream<T> parallel();
+    Stream<T> parallel();
+
+    /**
+     * ListStreams are by nature always sequential. Thus, this method always returns
+     * <code>false</code>.
+     *
+     * @return <code>false</code>
+     */
+    @Override
+    default boolean isParallel() {
+        return false;
+    }
 
     @NotNull
     @Override
@@ -107,10 +132,11 @@ public interface ListStream<T> extends ImmutableList<T>, Stream<T> {
     void forEach(Consumer<? super T> action);
 
     @Override
+    @NotNull
     Spliterator<T> spliterator();
 
     @Override
-    <U> U[] toArray(IntFunction<U[]> generator);
+    <U> U @NotNull [] toArray(IntFunction<U[]> generator);
 
     @Override
     default Object @NotNull [] toArray() {
@@ -121,8 +147,19 @@ public interface ListStream<T> extends ImmutableList<T>, Stream<T> {
     @NotNull
     ListStream<T> subList(int fromIndex, int toIndex);
 
+    /**
+     * Returns a parallel stream version of this ListStream. Since list streams
+     * are sequential by nature, the returned stream is not a list stream.
+     *
+     * <p>Unlike the {@link #parallel()} method this method buffers the stream
+     * (if needed) as this is a list operation.</p>
+     *
+     * @return A parallel stream over the contents of this list stream
+     */
     @Override
-    ListStream<T> parallelStream();
+    default Stream<T> parallelStream() {
+        return useAsList().parallel();
+    }
 
     @Override
     ListStream<T> stream();
@@ -193,6 +230,7 @@ public interface ListStream<T> extends ImmutableList<T>, Stream<T> {
      *
      * @return A fully buffered list stream
      */
+    @SuppressWarnings("Since15")
     ListStream<T> toList();
 
     /**
