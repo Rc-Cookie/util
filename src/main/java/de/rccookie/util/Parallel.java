@@ -32,6 +32,33 @@ public final class Parallel {
     private Parallel() { }
 
 
+    private static final ExceptionContainer.StackTraceFilter STACK_TRACE_FILTER = new ExceptionContainer.StackTraceFilter() {
+        @Override
+        public int getDropCountUp(StackTraceElement[] stack) {
+            int drop = 0;
+            while(drop < stack.length) {
+                StackTraceElement e = stack[stack.length - drop - 1];
+                if(!e.getClassName().startsWith(Parallel.class.getName()) && !e.getClassName().equals(ExceptionContainer.class.getName()))
+                    break;
+                drop++;
+            }
+            return drop;
+        }
+
+        @Override
+        public int getDropCountDown(StackTraceElement[] stack) {
+            int drop = 0;
+            while(drop < stack.length) {
+                StackTraceElement e = stack[drop];
+                if(!e.getClassName().startsWith(Parallel.class.getName()))
+                    break;
+                drop++;
+            }
+            return Math.max(0, drop - 1);
+        }
+    };
+
+
     /**
      * The parallel equivalent to
      * <pre>
@@ -1062,7 +1089,7 @@ public final class Parallel {
                 return false;
             }
 
-            exceptions = new ExceptionContainer<>();
+            exceptions = new ExceptionContainer<>(STACK_TRACE_FILTER);
 
             runWorkers();
 
@@ -1220,7 +1247,7 @@ public final class Parallel {
                 return false;
             }
 
-            exceptions = new ExceptionContainer<>();
+            exceptions = new ExceptionContainer<>(STACK_TRACE_FILTER);
 
             if(numThreads <= 0 || numThreads == commonThreadCount()) {
                 // Use anyMatch() to short-circuit if value is found or exception is thrown.
