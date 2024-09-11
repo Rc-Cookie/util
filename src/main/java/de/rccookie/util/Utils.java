@@ -805,14 +805,38 @@ public final class Utils {
     }
 
     public static String durationString(Duration duration) {
-        return durationString(duration.toNanos());
+        try {
+            return durationString(duration.toNanos());
+        } catch(ArithmeticException e) {
+            return durationString(duration.isNegative() ? -Long.MAX_VALUE : Long.MAX_VALUE);
+        }
+    }
+
+    public static String durationStringMs(long millis) {
+        if(millis > Long.MAX_VALUE / 1000000)
+            return durationString(Long.MAX_VALUE);
+        if(millis < Long.MIN_VALUE / 1000000)
+            return durationString(-Long.MAX_VALUE);
+        return durationString(millis * 1000000);
+    }
+
+    public static String durationStringS(long seconds) {
+        if(seconds > Long.MAX_VALUE / 1000000000)
+            return durationString(Long.MAX_VALUE);
+        if(seconds < Long.MIN_VALUE / 1000000000)
+            return durationString(-Long.MAX_VALUE);
+        return durationString(seconds * 1000000000);
+    }
+
+    public static String durationStringS(double seconds) {
+        return durationString((long) (seconds * 1000000000));
     }
 
     public static String durationString(long nanos) {
         if(nanos == 0)
             return "0s";
         if(nanos < 0)
-            return "-" + durationString(-nanos);
+            return "-" + durationString(-nanos == nanos ? Long.MAX_VALUE : -nanos);
 
         long millis = nanos / 1000000;
         long fullSeconds = millis / 1000;
