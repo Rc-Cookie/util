@@ -148,6 +148,8 @@ public final class Console {
 
     private static final Pattern ANSI_SEQ_PAT = Pattern.compile("\u001b\\[\\d+(;\\d+)*m");
 
+    private static final boolean IS_TERMINAL = System.console() != null;
+
 
     /**
      * Contains configuration options for the console class.
@@ -283,6 +285,8 @@ public final class Console {
     private static boolean lastProgressBarShowPercentage;
 
     private static String prompt = null;
+
+    private static int currentLine = 0;
 
 
     /**
@@ -920,19 +924,24 @@ public final class Console {
         if(prompt == null) {
             if(currentProgressBarWidth > 0) {
                 Config.out.println();
+                currentLine++;
                 currentProgressBarWidth = -1;
             }
-            if(newline)
+            if(newline) {
                 Config.out.println(line);
+                currentLine++;
+            }
             else Config.out.print(line);
         }
         else if(newline) {
             Config.out.println();
+            currentLine++;
             Config.out.print(line);
         }
         else {
             Config.out.print(Utils.repeat('\b', prompt.length()));
             Config.out.println(line);
+            currentLine++;
             Config.out.print(prompt);
         }
         Config.out.flush();
@@ -942,6 +951,7 @@ public final class Console {
         synchronized(Console.class) {
             if(currentProgressBarWidth > 0 || prompt != null) {
                 Config.out.println();
+                currentLine++;
                 currentProgressBarWidth = -1;
             }
             prompt = line;
@@ -982,6 +992,33 @@ public final class Console {
     public static void printStackTrace(String messageType) {
         if(hideMessageType(messageType, 1)) return; // Don't create unused exception
         printStackTrace0(messageType, false, new Exception(), 1);
+    }
+
+
+    public static boolean supportsLine() {
+        return IS_TERMINAL;
+    }
+
+    public static Line logLine(Object... message) {
+        return line0(OutputFilter.LOG, 1, message);
+    }
+
+    public static Line debugLine(Object... message) {
+        return line0(OutputFilter.DEBUG, 1, message);
+    }
+
+    public static Line line(String messageType, Object... message) {
+        return line0(messageType, 1, message);
+    }
+
+    private static Line line0(String messageType, int callDepth, Object... message) {
+        if(hideMessageType(messageType, callDepth))
+            return HIDDEN_LINE;
+        String prefix = getMessagePrefix(messageType);
+        String content = assembleMessage(message);
+        if(!supportsLine())
+            return new CompatabilityLine(prefix, content);
+        return new RealLine(prefix, content);
     }
 
 
@@ -1040,6 +1077,7 @@ public final class Console {
     public static synchronized void endProgress() {
         if(currentProgressBarWidth > 0) {
             Config.out.println();
+            currentLine++;
             currentProgressBarWidth = -1;
         }
     }
@@ -1089,6 +1127,7 @@ public final class Console {
 
         if(prompt != null) {
             Config.out.println();
+            currentLine++;
             prompt = null;
         }
 
@@ -1128,6 +1167,7 @@ public final class Console {
             if(message == null || message.length != 0) {
                 if(write0(actualType, message, false, callDepth + 1) < totalWidth) {
                     Config.out.println();
+                    currentLine++;
                     write0(actualType, new Object[0], false, callDepth + 1);
                 }
                 else dif.append(' '); // Space after non-empty message
@@ -1167,6 +1207,7 @@ public final class Console {
         lastPercentage = percentage;
         if(percentage == 100) {
             Config.out.println();
+            currentLine++;
             currentProgressBarWidth = -1;
         }
         else currentProgressBarWidth = width;
@@ -2218,5 +2259,212 @@ public final class Console {
             for(ScopeData s : scopes)
                 s.everUsed = true;
         }
+    }
+
+
+    public interface Line {
+
+        boolean isVisible();
+
+        boolean isHidden();
+
+        void append(Object... message);
+
+        void set(Object... message);
+
+        void overwrite(Object... message);
+
+        void setWithPrefix(String prefix, Object... message);
+
+        void overwriteWithPrefix(String prefix, Object... message);
+    }
+
+    private static final Line HIDDEN_LINE = new Line() {
+        @Override
+        public boolean isVisible() {
+            return false;
+        }
+
+        @Override
+        public boolean isHidden() {
+            return true;
+        }
+
+        @Override
+        public void append(Object... message) { }
+
+        @Override
+        public void set(Object... message) { }
+
+        @Override
+        public void overwrite(Object... message) { }
+
+        @Override
+        public void setWithPrefix(String prefix, Object... message) { }
+
+        @Override
+        public void overwriteWithPrefix(String prefix, Object... message) { }
+    };
+
+    private static final class RealLine implements Line {
+
+        private static final String ESC = "\u001b";
+        private static final String SAVE_CURSOR = ESC+"7";
+        private static final String RESTORE_CURSOR = ESC+"8";
+        private static final String CLEAR_LINE = ESC+"[K";
+        private static final String CLEAR_LINE_FROM_CURSOR = ESC+"[0K";
+
+        private final int line;
+        private int prefixLen;
+        private int length;
+
+        private RealLine(String prefix, String initial) {
+            synchronized(Console.class) {
+                this.line = currentLine;
+                print(prefix + initial, true);
+            }
+            prefixLen = length(prefix);
+            length = prefixLen + length(initial);
+        }
+
+        @Override
+        public boolean isVisible() {
+            return true;
+        }
+
+        @Override
+        public boolean isHidden() {
+            return false;
+        }
+
+        @Override
+        public void append(Object... message) {
+            String msg = assembleMessage(message);
+            synchronized(Console.class) {
+                Config.out.print(SAVE_CURSOR+ESC+"["+(currentLine - line)+"A"+ESC+"["+(length + 1)+"G");
+                Config.out.print(msg);
+                Config.out.print(RESTORE_CURSOR);
+                Config.out.flush();
+                length += length(msg);
+            }
+        }
+
+        @Override
+        public void set(Object... message) {
+            String msg = assembleMessage(message);
+            synchronized(Console.class) {
+                Config.out.print(SAVE_CURSOR+ESC+"["+(currentLine - line)+"A"+ESC+"["+(prefixLen + 1)+"G"+CLEAR_LINE_FROM_CURSOR);
+                Config.out.print(msg);
+                Config.out.print(RESTORE_CURSOR);
+                Config.out.flush();
+            }
+        }
+
+        @Override
+        public void overwrite(Object... message) {
+            String msg = assembleMessage(message);
+            synchronized(Console.class) {
+                Config.out.print(SAVE_CURSOR+ESC+"["+(currentLine - line)+"A"+ESC+"["+(prefixLen + 1)+"G");
+                Config.out.print(msg);
+                Config.out.print(RESTORE_CURSOR);
+                Config.out.flush();
+            }
+        }
+
+        @Override
+        public void setWithPrefix(String prefix, Object... message) {
+            if(prefix == null)
+                prefix = "null";
+            String msg = assembleMessage(message);
+            synchronized(Console.class) {
+                Config.out.print(SAVE_CURSOR+ESC+"["+(currentLine - line)+"A"+CLEAR_LINE);
+                Config.out.print(prefix + msg);
+                Config.out.print(RESTORE_CURSOR);
+                Config.out.flush();
+                prefixLen = length(prefix);
+                length = prefixLen + length(msg);
+            }
+        }
+
+        @Override
+        public void overwriteWithPrefix(String prefix, Object... message) {
+            if(prefix == null)
+                prefix = "null";
+            String msg = assembleMessage(message);
+            synchronized(Console.class) {
+                Config.out.print(SAVE_CURSOR+ESC+"["+(currentLine - line)+"A");
+                Config.out.print(prefix + msg);
+                Config.out.print(RESTORE_CURSOR);
+                Config.out.flush();
+                prefixLen = length(prefix);
+                length = prefixLen + length(msg);
+            }
+        }
+    }
+
+    private static final class CompatabilityLine implements Line {
+
+        private String prefix;
+        private String content;
+
+        private CompatabilityLine(String prefix, String initial) {
+            this.prefix = prefix;
+            this.content = initial;
+            print();
+        }
+
+        @Override
+        public boolean isVisible() {
+            return true;
+        }
+
+        @Override
+        public boolean isHidden() {
+            return false;
+        }
+
+        private void print() {
+            Console.print(prefix + content, true);
+        }
+
+        @Override
+        public void append(Object... message) {
+            content += assembleMessage(message);
+            print();
+        }
+
+        @Override
+        public void set(Object... message) {
+            setWithPrefix(prefix, message);
+        }
+
+        @Override
+        public void overwrite(Object... message) {
+            String over = assembleMessage(message);
+            content = over.length() < content.length() ? over + content.substring(0, over.length()) : over;
+            print();
+        }
+
+        @Override
+        public void setWithPrefix(String prefix, Object... message) {
+            this.prefix = prefix == null ? "null" : prefix;
+            this.content = assembleMessage(message);
+            print();
+        }
+
+        @Override
+        public void overwriteWithPrefix(String prefix, Object... message) {
+
+        }
+    }
+
+
+    public static void main(String[] args) {
+        Console.log("Hello");
+        Line l = Console.logLine("--- Dynamic line ---");
+        Console.log("World!");
+        l.set("abc");
+//        String ESC = "\u001b";
+//        System.out.println("abc\n"+ESC+"[Ad");
     }
 }
