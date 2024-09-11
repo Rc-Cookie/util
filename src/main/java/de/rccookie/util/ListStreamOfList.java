@@ -36,12 +36,7 @@ class ListStreamOfList<T> extends ImmutableListView<T> implements ListStream<T> 
     }
 
     @Override
-    public @NotNull ListStream<T> sequential() {
-        return this;
-    }
-
-    @Override
-    public @NotNull ListStream<T> parallel() {
+    public @NotNull Stream<T> parallel() {
         return parallelStream();
     }
 
@@ -181,11 +176,6 @@ class ListStreamOfList<T> extends ImmutableListView<T> implements ListStream<T> 
     }
 
     @Override
-    public boolean isParallel() {
-        return false;
-    }
-
-    @Override
     public <U> U @NotNull [] toArray(IntFunction<U[]> generator) {
         return list.toArray(generator);
     }
@@ -311,9 +301,10 @@ class ListStreamOfList<T> extends ImmutableListView<T> implements ListStream<T> 
         return new ListStreamOfList<>(list.subList(fromIndex, toIndex));
     }
 
+    @SuppressWarnings("unchecked")
     @Override
-    public ListStream<T> parallelStream() {
-        return ListStream.of(plainStream(true));
+    public Stream<T> parallelStream() {
+        return (Stream<T>) list.parallelStream();
     }
 
     @Override
@@ -332,14 +323,10 @@ class ListStreamOfList<T> extends ImmutableListView<T> implements ListStream<T> 
     }
 
 
-    private Stream<T> plainStream() {
-        return plainStream(false);
-    }
-
     @SuppressWarnings("unchecked")
-    private Stream<T> plainStream(boolean parallel) {
-        Stream<T> stream = (Stream<T>) (parallel ? list.parallelStream() : list.stream());
-        if(!(stream instanceof ListStreamOfList) || ((ListStreamOfList<Object>) stream).list != list)
+    private Stream<T> plainStream() {
+        Stream<T> stream = (Stream<T>) list.stream();
+        if(!(stream instanceof ListStreamOfList) || ((ListStreamOfList<?>) stream).list != list)
             return stream;
         // Handle special case where list implementation return ListStream.of(this) for stream():
         // If we just return list.stream(), we get another ListStreamOfList over the same list, which

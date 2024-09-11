@@ -43,12 +43,13 @@ class ListStreamOfStream<T> implements ListStream<T> {
     private List<T> buffer;
 
     public ListStreamOfStream(Stream<? extends T> stream) {
-        this.stream = Arguments.checkNull(stream, "stream");
+        this.stream = Arguments.checkNull(stream, "stream").sequential();
     }
 
     @Override
     public String toString() {
-        if(consumed && notYetRead == null) return "<Consumed stream>";
+        if(consumed && notYetRead == null)
+            return "<Consumed stream>";
         return bufferAll().toString();
     }
 
@@ -143,21 +144,8 @@ class ListStreamOfStream<T> implements ListStream<T> {
     }
 
     @Override
-    public @NotNull ListStream<T> sequential() {
-        if(notYetRead != null)
-            return stream();
-        //noinspection DataFlowIssue
-        stream = stream.sequential();
-        return this;
-    }
-
-    @Override
-    public @NotNull ListStream<T> parallel() {
-        if(notYetRead != null)
-            return parallelStream();
-        //noinspection DataFlowIssue
-        stream = stream.parallel();
-        return this;
+    public @NotNull Stream<T> parallel() {
+        return plainStream(true);
     }
 
     @Override
@@ -344,11 +332,6 @@ class ListStreamOfStream<T> implements ListStream<T> {
     }
 
     @Override
-    public boolean isParallel() {
-        return false;
-    }
-
-    @Override
     public <U> U @NotNull [] toArray(IntFunction<U[]> generator) {
         return bufferAll().toArray(generator);
     }
@@ -468,8 +451,9 @@ class ListStreamOfStream<T> implements ListStream<T> {
     }
 
     @Override
-    public ListStream<T> parallelStream() {
-        return ListStream.of(plainStream(true));
+    public Stream<T> parallelStream() {
+        useAsList();
+        return plainStream(true);
     }
 
     @Override
@@ -533,10 +517,14 @@ class ListStreamOfStream<T> implements ListStream<T> {
 
     @SuppressWarnings("unchecked")
     private Stream<T> plainStream(boolean parallel) {
-        if(notYetRead == null) return (Stream<T>) stream; // List part has not yet been used
+        if(notYetRead == null) {
+            // List part has not yet been used
+            return (Stream<T>) (parallel ? stream : stream.parallel());
+        }
         if(mightBeMore)
             return StreamSupport.stream(spliterator(), parallel);
-        if(buffer == null) return ListStream.empty();
+        if(buffer == null)
+            return ListStream.empty();
         if(parallel)
             return buffer.parallelStream();
         return buffer.stream();
